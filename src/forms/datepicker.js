@@ -3,7 +3,7 @@ import { isEditing } from '../helpers/forms.js'
 
 // input selector begins with the input it
 // is converting to a datetime input
-export function datepicker(inputSelector) {
+export default function datepicker(inputSelector) {
   const input = document.querySelector(inputSelector)
 
   if (!input) throw new Error(`Invalid input selector: ${inputSelector}`)

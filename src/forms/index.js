@@ -1,3 +1,3 @@
-import { datepicker } from './datepicker.js'
+import datepicker from './datepicker.js'
 
 export { datepicker }
