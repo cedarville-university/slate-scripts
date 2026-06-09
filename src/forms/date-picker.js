@@ -1,210 +1,211 @@
-import { format, now, today } from '../helpers/dates'
-import { isEditing } from '../helpers/forms'
+import { format, now, today } from '../helpers/dates.js'
+import { isEditing } from '../helpers/forms.js'
 
-const container = document.getElementById(
-  'form_question_304ff8b4-349e-4e00-b348-8719d8967ad0',
-)
-const response = container.querySelector('.form_responses')
-response.dataset.datePicker = ''
+// input selector begins with the input it
+// is converting to a datetime input
+export function datepicker(inputSelector) {
+  const input = document.querySelector(inputSelector)
 
-const isEditing = isEditing(container.closest('form'))
+  if (!input) throw new Error(`Invalid input selector: ${inputSelector}`)
+  if (!(input instanceof HTMLInputElement))
+    throw new Error(`datepicker only operates on an HTML input element`)
 
-if (!isEditing) {
-  let responseText = response.textContent
-  if (responseText) {
-    response.style.color = ''
-    if (responseText.length === 10) responseText += 'T00:00:00'
-    response.textContent = new Date(responseText).toLocaleString()
-  } else {
-    response.style.color = '#aaa'
-    response.textContent = '[not set]'
-  }
-} else {
-  const input = response.querySelector('input')
-  input.type = 'hidden'
+  const form = input.closest('form')
 
-  let value = input.value
-  if (value.length === 10) value += 'T00:00:00'
+  // only operates when the form is being edited
+  if (!isEditing(form)) return
+
+  const inputValue = normalizeInputValue(input.value)
 
   const datetime = document.createElement('input')
   datetime.type = 'datetime-local'
-  datetime.value = value || format(new Date(value))
+  datetime.setAttribute('data-datepicker', '')
+  datetime.value = inputValue || format(new Date(inputValue))
 
-  datetime.addEventListener(
-    'input',
-    () => (input.value = datetime.value === '' ? '' : datetime.value + ':00'),
-  )
-
-  datetime.addEventListener('change', () => {
-    console.log(datetime.value)
+  datetime.addEventListener('input', () => {
+    const oldValue = input.value
+    const newValue = normalizeInputValue(datetime.value)
+    input.value = newValue
   })
 
-  const quickActions = document.createElement('div')
-  quickActions.dataset.datePickerQuickActions = ''
-  quickActions.append(
-    ...[
-      [
-        document.createElement('button'),
-        'Today',
-        () => (datetime.value = today()),
-      ],
-      [document.createElement('button'), 'Now', () => (datetime.value = now())],
-      [
-        document.createElement('button'),
-        '+1 day',
-        () => {
-          const d =
-            datetime.value === '' ? new Date() : new Date(datetime.value)
-          datetime.value = format(
-            new Date(
-              d.getFullYear(),
-              d.getMonth(),
-              d.getDate() + 1,
-              d.getHours(),
-              d.getMinutes(),
-            ),
-          )
-        },
-      ],
-      [
-        document.createElement('button'),
-        '-1 day',
-        () => {
-          const d =
-            datetime.value === '' ? new Date() : new Date(datetime.value)
-          datetime.value = format(
-            new Date(
-              d.getFullYear(),
-              d.getMonth(),
-              d.getDate() - 1,
-              d.getHours(),
-              d.getMinutes(),
-            ),
-          )
-        },
-      ],
-      [
-        document.createElement('button'),
-        '+1 hour',
-        () => {
-          const d =
-            datetime.value === '' ? new Date() : new Date(datetime.value)
-          datetime.value = format(
-            new Date(
-              d.getFullYear(),
-              d.getMonth(),
-              d.getDate(),
-              d.getHours() + 1,
-              d.getMinutes(),
-            ),
-          )
-        },
-      ],
-      [
-        document.createElement('button'),
-        '-1 hour',
-        () => {
-          const d =
-            datetime.value === '' ? new Date() : new Date(datetime.value)
-          datetime.value = format(
-            new Date(
-              d.getFullYear(),
-              d.getMonth(),
-              d.getDate(),
-              d.getHours() - 1,
-              d.getMinutes(),
-            ),
-          )
-        },
-      ],
-      [
-        document.createElement('button'),
-        'Midnight',
-        () => {
-          try {
-            const d = new Date(datetime.value)
-            datetime.value = format(
-              new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0),
-            )
-          } catch (error) {
-            datetime.value = today()
-          }
-        },
-        (btn) => {
-          if (datetime.value === '' || datetime.value.endsWith('00:00')) {
-            btn.style.display = 'none'
-          } else {
-            btn.style.display = ''
-          }
-        },
-      ],
-      [
-        document.createElement('button'),
-        'Clear',
-        () => (datetime.value = ''),
-        (btn) => (btn.style.display = datetime.value === '' ? 'none' : ''),
-      ],
-    ].map(([btn, text, handleClick, effect]) => {
-      btn.type = 'button'
-      btn.append(text)
-      btn.addEventListener('click', () => {
+  const style = document.createElement('style')
+
+  function normalizeInputValue(inputValue) {
+    if (inputValue.length === 10) inputValue += 'T00:00:00'
+    if (inputValue.length === 16) inputValue += ':00'
+
+    return inputValue
+  }
+
+  let styleContent = ''
+  const actions = new Set()
+
+  return {
+    addStyles(content) {
+      style.textContent = `@scope { ${content} }`
+      return this
+    },
+    addQuickAction({ label, action, effect }) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.append(label)
+      button.addEventListener('click', () => {
         const oldValue = datetime.value
-        handleClick()
+        action({ input, datetime, button })
         const newValue = datetime.value
 
         // trigger changed event if necessary
         if (newValue !== oldValue) {
           datetime.dispatchEvent(new Event('input'))
+          input.dispatchEvent(new Event('input'))
         }
       })
       if (effect) {
-        effect(btn)
+        effect({ input, datetime, button })
         datetime.addEventListener('input', () => {
-          effect(btn)
+          effect({ input, datetime, button })
         })
       }
-      return btn
-    }),
-  )
 
-  response.append(datetime, quickActions)
-}
+      actions.add(button)
 
-// register datetime picker styles if they are not already registered
-if (!document.getElementById('DATEPICKER-STYLES')) {
-  const styles = document.createElement('style')
-  styles.id = 'DATEPICKER-STYLES'
-  styles.textContent = `
-        [data-date-picker] {
-
-          input[type='datetime-local'] {
-            border: 1px solid var(--fw-input-border)
-          }
-
-          [data-date-picker-quick-actions] {
-            margin-block: 0.5rem 0.25rem;
-            gap: 0.5rem 0;
-            display: flex;
-            flex-wrap: wrap;
-    
-            span {
-              display: block;
-              margin-inline-end: 0.5rem;
-              font-weight: 600;
+      return this
+    },
+    addQuickActions(actions) {
+      actions.forEach((action) => this.addQuickAction(action))
+      return this
+    },
+    addBaseQuickActions() {
+      this.addQuickActions([
+        {
+          label: 'Today',
+          action: ({ datetime }) => (datetime.value = today()),
+        },
+        {
+          label: 'Now',
+          action: ({ datetime }) => (datetime.value = now()),
+        },
+        {
+          label: '+1 day',
+          action: ({ datetime }) => {
+            const d =
+              datetime.value === '' ? new Date() : new Date(datetime.value)
+            datetime.value = format(
+              new Date(
+                d.getFullYear(),
+                d.getMonth(),
+                d.getDate() + 1,
+                d.getHours(),
+                d.getMinutes(),
+              ),
+            )
+          },
+        },
+        {
+          label: '-1 day',
+          action: ({ datetime }) => {
+            const d =
+              datetime.value === '' ? new Date() : new Date(datetime.value)
+            datetime.value = format(
+              new Date(
+                d.getFullYear(),
+                d.getMonth(),
+                d.getDate() - 1,
+                d.getHours(),
+                d.getMinutes(),
+              ),
+            )
+          },
+        },
+        {
+          label: '+1 hour',
+          action: ({ datetime }) => {
+            const d =
+              datetime.value === '' ? new Date() : new Date(datetime.value)
+            datetime.value = format(
+              new Date(
+                d.getFullYear(),
+                d.getMonth(),
+                d.getDate(),
+                d.getHours() + 1,
+                d.getMinutes(),
+              ),
+            )
+          },
+        },
+        {
+          label: '-1 hour',
+          action: ({ datetime }) => {
+            const d =
+              datetime.value === '' ? new Date() : new Date(datetime.value)
+            datetime.value = format(
+              new Date(
+                d.getFullYear(),
+                d.getMonth(),
+                d.getDate(),
+                d.getHours() - 1,
+                d.getMinutes(),
+              ),
+            )
+          },
+        },
+        {
+          label: 'Midnight',
+          action: ({ datetime }) => {
+            try {
+              const d = new Date(datetime.value)
+              datetime.value = format(
+                new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0),
+              )
+            } catch (error) {
+              datetime.value = today()
             }
-    
-            button {
-              border-radius: 0.25rem;
-    
-              &:disabled {
-                opacity: 0.5;
+          },
+          effect: ({ datetime, button }) => {
+            if (datetime.value === '' || datetime.value.endsWith('00:00')) {
+              button.style.display = 'none'
+            } else {
+              button.style.display = ''
+            }
+          },
+        },
+        {
+          label: 'Clear',
+          action: ({ datetime }) => (datetime.value = ''),
+          effect: ({ datetime, button }) =>
+            (button.style.display = datetime.value === '' ? 'none' : ''),
+        },
+      ])
+
+      return this
+    },
+    make() {
+      input.type = 'hidden'
+
+      const parentElement = input.parentElement
+      parentElement.setAttribute('data-datepicker-container', '')
+
+      parentElement.append(datetime, ...actions)
+      parentElement.parentElement.append(style)
+
+      return {
+        input,
+        datetime,
+        container: parentElement,
+        styles: {
+          styleEl: style,
+          get value() {
+            return this.styleEl.textContent
+          },
+          set value(styles) {
+            this.styleEl.textContent = `
+              @scope {
+                ${styles}
               }
-            }
-          }
-        }
+            `
+          },
+        },
       }
-      `
-  document.head.append(styles)
+    },
+  }
 }
-
-export function make() {}
