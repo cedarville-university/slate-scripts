@@ -42,7 +42,7 @@ export default function datepicker(inputSelector) {
 
   return {
     addStyles(content) {
-      styleContent = content
+      styleContent = content.trim()
       return this
     },
     addQuickAction({ label, action, effect }) {
@@ -206,7 +206,7 @@ export default function datepicker(inputSelector) {
             return styleContent
           },
           set value(content) {
-            styleContent = content
+            styleContent = content.trim()
             this.styleEl.textContent = `@scope {
   ${styleContent.trim()}
 }
