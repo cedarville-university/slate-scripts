@@ -1,0 +1,22 @@
+<strong>URL</strong>
+<script>
+  {
+    const container = document.getElementById(
+      'form_question_1bf44f19-c913-405c-85da-3a6b8913ff84',
+    )
+    container.dataset.overflow = ''
+
+    if (!document.getElementById('OVERFLOW-STYLES')) {
+      const style = document.createElement('style')
+      style.id = 'OVERFLOW-STYLES'
+      style.textContent = `
+        [data-overflow] {
+        	a {
+            line-break: anywhere;
+          }
+        }
+       `
+      document.head.append(style)
+    }
+  }
+</script>

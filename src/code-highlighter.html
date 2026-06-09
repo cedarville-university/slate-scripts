@@ -1,0 +1,90 @@
+<strong>Integration</strong>
+<script>
+  {
+    const input = document.querySelector(
+      '[name="form_3869ad21-d1fe-4072-b85c-a0a75751583b"]',
+    )
+    const parent = input.parentElement
+
+    const isNotEditing = !input.closest('form').action.includes('form_edit')
+
+    if (isNotEditing) {
+      if (!input.value) {
+        const emptySpan = document.createElement('span')
+        emptySpan.style.color = '#aaa'
+        emptySpan.textContent = '[not set]'
+        parent.innerHTML = ''
+        parent.append(input, emptySpan)
+      } else {
+        if (!document.getElementById('JS-HIGHLIGHTER')) {
+          const script = document.createElement('script')
+          script.id = 'JS-HIGHLIGHTER'
+          script.type = 'module'
+          script.textContent = `
+            import hljs from "https://esm.sh/highlight.js/lib/core"
+            import javascript from "https://esm.sh/highlight.js/lib/languages/javascript"
+            hljs.registerLanguage('javascript', javascript)
+
+            window.highlightJs = (js) => {
+              return hljs.highlight(js, { language: 'javascript' }).value
+            }
+          `
+
+          const themeStyles = document.createElement('link')
+          themeStyles.rel = 'stylesheet'
+          themeStyles.href =
+            'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/atom-one-light.min.css'
+
+          document.head.append(script, themeStyles)
+        }
+
+        const code = document.createElement('pre')
+        code.classList.add('parent', 'collapsed', 'theme-atom-one-light-min')
+        code.innerHTML = `
+          <span class="collapsed">{ <button type="button" class="uncollapse">...</button> }</span>
+          <code style="display:none" class="hljs language-javascript"></code>
+        `
+
+        code.addEventListener('click', (e) => {
+          if (e.target.matches('button.uncollapse')) {
+            const parent = e.target.parentElement
+            const sibling = parent.nextElementSibling
+
+            parent.classList.remove('collapsed')
+            parent.style.display = 'none'
+
+            sibling.style.display = ''
+            sibling.innerHTML = window.highlightJs(input.value)
+          }
+        })
+
+        const style = document.createElement('style')
+        style.textContent = `
+          @scope {
+            .parent {
+              white-space: normal;
+
+              &.collapsed {
+                display: inline-block;
+              }
+            }
+
+            button {
+              background-color: transparent;
+              padding: 0 4px;
+              border-radius: 4px;
+            }
+
+            code {
+              border-radius: 8px;
+              white-space: pre-wrap;
+            }
+          }
+        `
+
+        parent.innerHTML = ''
+        parent.append(input, code, style)
+      }
+    }
+  }
+</script>

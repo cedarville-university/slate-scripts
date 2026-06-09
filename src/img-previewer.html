@@ -1,0 +1,94 @@
+<strong>Image</strong>
+<script>
+  {
+    const container = document.getElementById(
+      'form_question_b872c267-5be8-496f-bc81-e9eeb174cba5',
+    )
+    const response = container.querySelector('.form_responses')
+    response.dataset.hasImagePreview = ''
+    const form = container.closest('form')
+    const isEditing =
+      new URL(form.action).searchParams.get('cmd') === 'form_edit'
+
+    const input = response.querySelector('input')
+
+    const handleImg = () => {
+      if (input.value === '') {
+        response.querySelector('img')?.remove()
+        return
+      }
+
+      const img = document.createElement('img')
+      img.src = input.value
+      img.onerror = () => {
+        const errorDiv = document.createElement('div')
+        errorDiv.classList.add('error')
+        errorDiv.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true" data-slot="icon" class="size-6">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"></path>
+          </svg>
+          <span>Image preview could not be loaded</span>
+        `
+        if (response.querySelector('.error'))
+          response.querySelector('.error').replaceWith(errorDiv)
+        else if (response.querySelector('img'))
+          response.querySelector('img').replaceWith(errorDiv)
+        else response.append(errorDiv)
+      }
+      img.onload = () => {
+        response.querySelector('.error')?.remove()
+      }
+
+      if (response.querySelector('img'))
+        response.querySelector('img').replaceWith(img)
+      else response.append(img)
+    }
+
+    if (isEditing) {
+      input.addEventListener('change', () => {
+        // only store relative urls
+        const origin = window.location.origin
+        if (input.value.includes(origin)) {
+          input.value = input.value.replace(origin, '')
+        }
+
+        handleImg()
+      })
+    }
+
+    handleImg()
+
+    if (!document.getElementById('IMAGE-PREVIEWER')) {
+      const style = document.createElement('style')
+      style.id = 'IMAGE-PREVIEWER'
+      style.textContent = `
+        [data-has-image-preview] {
+          line-break: anywhere;
+
+          img, .error {
+            margin-block-start: 0.5rem;
+          }
+
+          img {
+            aspect-ratio: 740 / 236;
+            display: block;
+            border-radius: 8px;
+            box-shadow: 0px 2px 5px 2px rgb(0 0 0 / 15%);
+          }
+
+          .error {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+
+            svg {
+              width: 1.5rem;
+            }
+          }
+
+        }
+      `
+      document.head.append(style)
+    }
+  }
+</script>
