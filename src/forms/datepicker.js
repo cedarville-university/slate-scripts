@@ -29,6 +29,9 @@ export default function datepicker(inputSelector) {
   })
 
   const style = document.createElement('style')
+  let styleContent = ''
+
+  const actions = new Set()
 
   function normalizeInputValue(inputValue) {
     if (inputValue.length === 10) inputValue += 'T00:00:00'
@@ -37,12 +40,9 @@ export default function datepicker(inputSelector) {
     return inputValue
   }
 
-  let styleContent = ''
-  const actions = new Set()
-
   return {
     addStyles(content) {
-      style.textContent = `@scope { ${content} }`
+      styleContent = content
       return this
     },
     addQuickAction({ label, action, effect }) {
@@ -75,7 +75,7 @@ export default function datepicker(inputSelector) {
       actions.forEach((action) => this.addQuickAction(action))
       return this
     },
-    addBaseQuickActions() {
+    addDefaultQuickActions() {
       this.addQuickActions([
         {
           label: 'Today',
@@ -162,18 +162,15 @@ export default function datepicker(inputSelector) {
             }
           },
           effect: ({ datetime, button }) => {
-            if (datetime.value === '' || datetime.value.endsWith('00:00')) {
-              button.style.display = 'none'
-            } else {
-              button.style.display = ''
-            }
+            button.disabled =
+              datetime.value === '' || datetime.value.endsWith('00:00')
           },
         },
         {
           label: 'Clear',
           action: ({ datetime }) => (datetime.value = ''),
           effect: ({ datetime, button }) =>
-            (button.style.display = datetime.value === '' ? 'none' : ''),
+            (button.disabled = datetime.value === ''),
         },
       ])
 
@@ -186,7 +183,18 @@ export default function datepicker(inputSelector) {
       parentElement.setAttribute('data-datepicker-container', '')
 
       parentElement.append(datetime, ...actions)
+
+      if (actions.size > 0) {
+        const actionsContainer = document.createElement('div')
+        actionsContainer.setAttribute('data-datepicker-quick-actions', '')
+        actionsContainer.append(...actions)
+        parentElement.append(actionsContainer)
+      }
+
       parentElement.parentElement.append(style)
+      if (styleContent) {
+        style.textContent = `@scope { ${styleContent.trim()} }`
+      }
 
       return {
         input,
@@ -195,13 +203,13 @@ export default function datepicker(inputSelector) {
         styles: {
           styleEl: style,
           get value() {
-            return this.styleEl.textContent
+            return styleContent
           },
-          set value(styles) {
-            this.styleEl.textContent = `
-              @scope {
-                ${styles}
-              }
+          set value(content) {
+            styleContent = content
+            this.styleEl.textContent = `@scope {
+  ${styleContent.trim()}
+}
             `
           },
         },
