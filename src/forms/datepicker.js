@@ -4,7 +4,10 @@ import { isEditing } from '../helpers/forms.js'
 // input selector begins with the input it
 // is converting to a datetime input
 export default function datepicker(inputSelector) {
-  const input = document.querySelector(inputSelector)
+  const input =
+    inputSelector instanceof HTMLInputElement
+      ? inputSelector
+      : document.querySelector(inputSelector)
 
   if (!input) throw new Error(`Invalid input selector: ${inputSelector}`)
   if (!(input instanceof HTMLInputElement))
@@ -21,6 +24,7 @@ export default function datepicker(inputSelector) {
   datetime.type = 'datetime-local'
   datetime.setAttribute('data-datepicker', '')
   datetime.value = inputValue || format(new Date(inputValue))
+  datetime.style.cssText = input.style.cssText
 
   datetime.addEventListener('input', () => {
     const oldValue = input.value
@@ -51,7 +55,7 @@ export default function datepicker(inputSelector) {
       button.append(label)
       button.addEventListener('click', () => {
         const oldValue = datetime.value
-        action({ input, datetime, button })
+        action({ input, datetime, button, today, now, formatDt: format })
         const newValue = datetime.value
 
         // trigger changed event if necessary

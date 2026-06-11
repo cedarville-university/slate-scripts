@@ -1,3 +1,4 @@
+import { formControl } from './form.js'
 import datepicker from './datepicker.js'
 
-export { datepicker }
+export { formControl, datepicker }
