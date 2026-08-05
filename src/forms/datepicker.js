@@ -1,26 +1,19 @@
 import { format, now, today } from '../helpers/dates.js'
-import { isEditing } from '../helpers/forms.js'
+import { isEditing, resolveInputSelector } from '../helpers/forms.js'
+import { registerStyles } from '../helpers/utlity.js'
 
 // input selector begins with the input it
 // is converting to a datetime input
 export default function datepicker(inputSelector) {
-  const input =
-    inputSelector instanceof HTMLInputElement
-      ? inputSelector
-      : document.querySelector(inputSelector)
-
-  if (!input) throw new Error(`Invalid input selector: ${inputSelector}`)
-  if (!(input instanceof HTMLInputElement))
-    throw new Error(`datepicker only operates on an HTML input element`)
-
-  const form = input.closest('form')
+  const { input, question, isEditing } = resolveInputSelector(inputSelector)
 
   // only operates when the form is being edited
-  if (!isEditing(form)) return
+  if (!isEditing) return
 
   const inputValue = normalizeInputValue(input.value)
 
   const datetime = document.createElement('input')
+  datetime.dataset.control = 'input'
   datetime.type = 'datetime-local'
   datetime.setAttribute('data-datepicker', '')
   datetime.value = inputValue || format(new Date(inputValue))
@@ -46,7 +39,7 @@ export default function datepicker(inputSelector) {
 
   return {
     addStyles(content) {
-      styleContent = content.trim()
+      registerStyles(content, question)
       return this
     },
     addQuickAction({ label, action, effect }) {
@@ -80,7 +73,7 @@ export default function datepicker(inputSelector) {
       return this
     },
     addDefaultQuickActions() {
-      this.addQuickActions([
+      const actions = [
         {
           label: 'Today',
           action: ({ datetime }) => (datetime.value = today()),
@@ -176,7 +169,9 @@ export default function datepicker(inputSelector) {
           effect: ({ datetime, button }) =>
             (button.disabled = datetime.value === ''),
         },
-      ])
+      ]
+
+      this.addQuickActions(actions)
 
       return this
     },
@@ -195,28 +190,10 @@ export default function datepicker(inputSelector) {
         parentElement.append(actionsContainer)
       }
 
-      parentElement.parentElement.append(style)
-      if (styleContent) {
-        style.textContent = `@scope { ${styleContent.trim()} }`
-      }
-
       return {
         input,
         datetime,
         container: parentElement,
-        styles: {
-          styleEl: style,
-          get value() {
-            return styleContent
-          },
-          set value(content) {
-            styleContent = content.trim()
-            this.styleEl.textContent = `@scope {
-  ${styleContent.trim()}
-}
-            `
-          },
-        },
       }
     },
   }

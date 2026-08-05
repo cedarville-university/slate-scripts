@@ -74,15 +74,11 @@ export function formControl(formSelector) {
 
       return this
     },
-    css(content) {
-      const style =
-        document.getElementById(`${id}_css`) ?? document.createElement('style')
-      style.id = `${id}_css`
-      style.textContent = `form[data-control-id="${id}"] { ${content.trim()} }`
+    addStyles(content) {
+      const style = document.createElement('style')
+      style.textContent = `@scope { ${content.trim()} }`
 
-      if (style.parentElement == null) {
-        form.parentElement.append(style)
-      }
+      form.append(style)
 
       return this
     },
