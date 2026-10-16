@@ -20,7 +20,7 @@ export function formControl(formSelector) {
     [...form.querySelectorAll('.form_question')]
       .map((question) => [
         question,
-        question.querySelector('label'),
+        question.querySelector('label,.form_label'),
         question.querySelector('input, textarea, select'),
       ])
       .filter(([, label, input]) => label != null && input != null)
