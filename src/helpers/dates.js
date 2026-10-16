@@ -9,7 +9,7 @@ export function now() {
   return format(new Date())
 }
 
-export function format(d, mask = 'yyyy-MM-ddThh:mm') {
+export function format(d, mask = 'yyyy-MM-ddThh:mm:ss') {
   try {
     let dateString = mask.replaceAll('yyyy', d.getFullYear())
     dateString = dateString.replaceAll('yy', String(d.getFullYear()).slice(2))
@@ -37,6 +37,12 @@ export function format(d, mask = 'yyyy-MM-ddThh:mm') {
       String(d.getMinutes()).padStart(2, '0'),
     )
     dateString = dateString.replaceAll('m', d.getMinutes())
+
+    dateString = dateString.replaceAll(
+      'ss',
+      String(d.getSeconds()).padStart(2, '0'),
+    )
+    dateString = dateString.replaceAll('s', d.getSeconds())
 
     return dateString
   } catch (error) {
