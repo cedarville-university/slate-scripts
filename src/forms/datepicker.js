@@ -74,9 +74,6 @@ export default function datepicker(inputSelector, options = {}) {
     input.value = newValue
   })
 
-  const style = document.createElement('style')
-  let styleContent = ''
-
   const actions = new Set()
 
   function normalizeInputValue(inputValue) {
