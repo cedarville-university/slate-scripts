@@ -140,6 +140,7 @@ export default function datepicker(inputSelector, options = {}) {
                 d.getDate() + 1,
                 d.getHours(),
                 d.getMinutes(),
+                d.getSeconds(),
               ),
             )
           },
@@ -156,6 +157,7 @@ export default function datepicker(inputSelector, options = {}) {
                 d.getDate() - 1,
                 d.getHours(),
                 d.getMinutes(),
+                d.getSeconds(),
               ),
             )
           },
@@ -172,6 +174,7 @@ export default function datepicker(inputSelector, options = {}) {
                 d.getDate(),
                 d.getHours() + 1,
                 d.getMinutes(),
+                d.getSeconds(),
               ),
             )
           },
@@ -188,6 +191,7 @@ export default function datepicker(inputSelector, options = {}) {
                 d.getDate(),
                 d.getHours() - 1,
                 d.getMinutes(),
+                d.getSeconds(),
               ),
             )
           },
