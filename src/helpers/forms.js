@@ -3,7 +3,7 @@ export function isEditing(formEl) {
     throw new Error('isEditing only works with a form element')
   if (!formEl.action) throw new Error('form action is required')
   const actionURL = new URL(formEl.action)
-  return ['form_edit', 'widget'].includes(actionURL.searchParams('cmd'))
+  return ['form_edit', 'widget'].includes(actionURL.searchParams.get('cmd'))
 }
 
 export function resolveInputSelector(inputSelector) {
