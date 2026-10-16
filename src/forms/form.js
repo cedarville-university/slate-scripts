@@ -1,3 +1,5 @@
+import { isEditing } from '../helpers/forms.js'
+
 export function formControl(formSelector) {
   const id = crypto.randomUUID()
   const form =
@@ -12,63 +14,70 @@ export function formControl(formSelector) {
   form.dataset.controlId = id
   form.dataset.control = 'form'
 
+  const editing = isEditing(form)
+
   const questions = new Map(
-    [...form.querySelectorAll('.form_question')].map((question) => {
-      question.dataset.control = 'question'
+    [...form.querySelectorAll('.form_question')]
+      .map((question) => [
+        question,
+        question.querySelector('label'),
+        question.querySelector('input, textarea, select'),
+      ])
+      .filter(([, label, input]) => label != null && input != null)
+      .map(([question, label, input]) => {
+        question.dataset.control = 'question'
+        label.dataset.control = 'label'
+        input.dataset.control = 'input'
 
-      const label = question.querySelector('label')
-      label.dataset.control = 'label'
-
-      const input = question.querySelector('input, textarea, select')
-      input.dataset.control = 'input'
-
-      const style = (styles, applyTo = 'input') => {
-        switch (applyTo) {
-          case 'question':
-            Object.assign(question.style, styles)
-            break
-          case 'label':
-            Object.assign(label.style, styles)
-            break
-          case 'input':
-            Object.assign(input.style, styles)
-            break
-          default:
-            throw new Error(
-              'Only question, label, and input are supported using applyTo:' +
-                applyTo,
-            )
+        const style = (styles, applyTo = 'input') => {
+          switch (applyTo) {
+            case 'question':
+              Object.assign(question.style, styles)
+              break
+            case 'label':
+              Object.assign(label.style, styles)
+              break
+            case 'input':
+              Object.assign(input.style, styles)
+              break
+            default:
+              throw new Error(
+                'Only question, label, and input are supported using applyTo:' +
+                  applyTo,
+              )
+          }
         }
-      }
 
-      const on = (event, handler, options = {}) => {
-        input.addEventListener(event, handler, options)
+        const on = (event, handler, options = {}) => {
+          input.addEventListener(event, handler, options)
 
-        return () => input.removeEventListener(event, handler)
-      }
+          return () => input.removeEventListener(event, handler)
+        }
 
-      return [
-        label.textContent.trim(),
-        {
-          question,
-          label,
-          input,
-          style,
-          on,
-          effect: (fn) => {
-            fn?.({ question, label, input, style })
-            on('input', (event) => {
+        return [
+          label.textContent.trim(),
+          {
+            isEditing,
+            question,
+            label,
+            input,
+            style,
+            on,
+            effect: (fn) => {
               fn?.({ question, label, input, style })
-            })
+              on('input', (event) => {
+                fn?.({ question, label, input, style })
+              })
+            },
           },
-        },
-      ]
-    }),
+        ]
+      }),
   )
 
   return {
     _form: form,
     _questions: questions,
+    _isEditing: editing,
     style(styles) {
       Object.assign(form.style, styles)
 
@@ -100,8 +109,12 @@ export function formControl(formSelector) {
       return this
     },
     question(label, fn) {
-      if (!questions.has(label)) return
-      fn?.(questions.get(label), questions)
+      if (!questions.has(label)) return this
+      fn?.({
+        question: questions.get(label),
+        questions,
+        isEditing: editing,
+      })
 
       return this
     },

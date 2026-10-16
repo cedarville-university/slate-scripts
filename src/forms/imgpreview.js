@@ -10,7 +10,7 @@ export default function imgpreview(inputSelector) {
 
   const prepareImg = () => {
     const inputValue = input.value.trim()
-    img.style.display = inputValue || 'none'
+    img.style.display = inputValue ? '' : 'none'
     img.src = inputValue
 
     img.onerror = () => {
@@ -48,7 +48,7 @@ export default function imgpreview(inputSelector) {
           // only store relative urls
           const origin = window.location.origin
           if (input.value.includes(origin)) {
-            input.value = input.value.replace('origin', '')
+            input.value = input.value.replace(origin, '')
           }
 
           prepareImg()
