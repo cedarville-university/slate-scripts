@@ -1,6 +1,6 @@
 export function debounce(fn, ms = 250) {
   let timeout
-  return () => {
+  return function () {
     clearTimeout(timeout)
     timeout = setTimeout(() => fn(...arguments), ms)
   }

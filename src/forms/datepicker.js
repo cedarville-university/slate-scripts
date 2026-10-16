@@ -1,14 +1,62 @@
 import { format, now, today } from '../helpers/dates.js'
-import { isEditing, resolveInputSelector } from '../helpers/forms.js'
+import { resolveInputSelector } from '../helpers/forms.js'
 import { registerStyles } from '../helpers/utlity.js'
 
 // input selector begins with the input it
 // is converting to a datetime input
-export default function datepicker(inputSelector) {
+export default function datepicker(inputSelector, options = {}) {
   const { input, question, isEditing } = resolveInputSelector(inputSelector)
+  const container = input.parentElement
 
-  // only operates when the form is being edited
-  if (!isEditing) return
+  const { emptyText = '[not set]', locales, dateTimeOptions } = options
+
+  // the datetime input is edit only -- viewing renders the stored value
+  // formatted, since Slate leaves it in its raw storage format
+  if (!isEditing)
+    return {
+      addStyles(content) {
+        registerStyles(content, question ?? container)
+        return this
+      },
+      addQuickAction() {
+        return this
+      },
+      addQuickActions() {
+        return this
+      },
+      addDefaultQuickActions() {
+        return this
+      },
+      make() {
+        container.setAttribute('data-datepicker-container', '')
+
+        const value = input.value.trim()
+
+        // keep the input as the source of truth and drop the raw value
+        // Slate rendered beside it
+        container.replaceChildren(input)
+
+        const rendered = document.createElement('span')
+
+        if (!value) {
+          rendered.setAttribute('data-datepicker-empty', '')
+          rendered.append(emptyText)
+        } else {
+          const date = new Date(value)
+
+          rendered.setAttribute('data-datepicker-value', '')
+          rendered.append(
+            Number.isNaN(date.getTime())
+              ? value
+              : date.toLocaleString(locales, dateTimeOptions),
+          )
+        }
+
+        container.append(rendered)
+
+        return { input, datetime: null, container, rendered }
+      },
+    }
 
   const inputValue = normalizeInputValue(input.value)
 
@@ -18,6 +66,7 @@ export default function datepicker(inputSelector) {
   datetime.setAttribute('data-datepicker', '')
   datetime.value = inputValue || format(new Date(inputValue))
   datetime.style.cssText = input.style.cssText
+  datetime.step = '1'
 
   datetime.addEventListener('input', () => {
     const oldValue = input.value
@@ -39,7 +88,7 @@ export default function datepicker(inputSelector) {
 
   return {
     addStyles(content) {
-      registerStyles(content, question)
+      registerStyles(content, question ?? container)
       return this
     },
     addQuickAction({ label, action, effect }) {
