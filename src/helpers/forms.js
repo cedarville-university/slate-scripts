@@ -14,8 +14,11 @@ export function resolveInputSelector(inputSelector) {
       : document.querySelector(inputSelector)
 
   if (!input) throw new Error(`Invalid input selector: ${inputSelector}`)
-  if (!(input instanceof HTMLInputElement))
-    throw new Error(`datepicker only operates on an HTML input element`)
+  if (
+    !(input instanceof HTMLInputElement) &&
+    !(input instanceof HTMLTextAreaElement)
+  )
+    throw new Error(`Must be an HTML input or textarea element`)
 
   const form = input.closest('form')
 
