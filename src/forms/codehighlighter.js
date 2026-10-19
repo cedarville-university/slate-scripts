@@ -47,11 +47,17 @@ export default function codehighlighter(inputSelector, options = {}) {
   // only operates when the form is being viewed -- the inverse of datepicker
   if (isEditing)
     return {
-      addStyles() {
-        return this
-      },
       make() {
-        return { input, container, pre: null, code: null }
+        return {
+          addStyles(content) {
+            registerStyles(content, question ?? container)
+            return this
+          },
+          input,
+          container,
+          pre: null,
+          code: null,
+        }
       },
     }
 
@@ -63,10 +69,6 @@ export default function codehighlighter(inputSelector, options = {}) {
   } = options
 
   return {
-    addStyles(content) {
-      registerStyles(content, question ?? container)
-      return this
-    },
     make() {
       container.setAttribute('data-codehighlighter-container', '')
 
@@ -83,7 +85,16 @@ export default function codehighlighter(inputSelector, options = {}) {
 
         container.append(empty)
 
-        return { input, container, pre: null, code: null }
+        return {
+          addStyles(content) {
+            registerStyles(content, question ?? container)
+            return this
+          },
+          input,
+          container,
+          pre: null,
+          code: null,
+        }
       }
 
       registerTheme(theme)
@@ -141,7 +152,18 @@ export default function codehighlighter(inputSelector, options = {}) {
       if (collapsed) collapse()
       else expand()
 
-      return { input, container, pre, code, expand, collapse }
+      return {
+        addStyles(content) {
+          registerStyles(content, question ?? container)
+          return this
+        },
+        input,
+        container,
+        pre,
+        code,
+        expand,
+        collapse,
+      }
     },
   }
 }
