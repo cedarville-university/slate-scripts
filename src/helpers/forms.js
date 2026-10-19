@@ -8,7 +8,8 @@ export function isEditing(formEl) {
 
 export function resolveInputSelector(inputSelector) {
   const input =
-    inputSelector instanceof HTMLInputElement
+    inputSelector instanceof HTMLInputElement ||
+    inputSelector instanceof HTMLTextAreaElement
       ? inputSelector
       : document.querySelector(inputSelector)
 
