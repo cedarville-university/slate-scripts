@@ -16,3 +16,9 @@ export function registerStyles(textContent, appendTo) {
   style.textContent = `@scope { ${textContent.trim()} }`
   appendTo.append(style)
 }
+
+export function createEl(tag, textOrEl) {
+  const el = document.createElement(tag)
+  if (textOrEl != null) el.append(textOrEl)
+  return el
+}
