@@ -1,25 +1,49 @@
 import { resolveInputSelector } from '../helpers/forms.js'
 import { createEl, registerStyles } from '../helpers/utlity.js'
 
-export default function repeater(inputSelector, formatter = null) {
+export default function repeater(inputSelector, options = {}) {
   const { input } = resolveInputSelector(inputSelector)
 
-  return init(input, input.parentElement, formatter)
+  return init(input, { container: input.parentElement, ...options })
 }
 
-function init(input, container, formatter = null) {
+function init(
+  input,
+  {
+    container,
+    maxNewItems = null,
+    emptyText = null,
+    keys = null,
+    formatter = null,
+    renderActions = null,
+    visibility = {},
+  },
+) {
   const items = JSON.parse(input.value.trim() || '[]')
-  const columnKeys = Object.keys(items[0] ?? {}).filter(
-    (key) => key !== 'edit' && key !== 'format',
-  )
+  const newItemFlags = items.map(() => false)
+  let newItemsCount = 0
+  const visibilityPreferences = { table: true, empty: true, action: true, ...visibility }
+  const isDataKey = (key) => !['editAction', 'deleteAction', 'format'].includes(key)
+  const columns = (keys ?? Object.keys(items[0] ?? {}))
+    .map((column) => (typeof column === 'string' ? { key: column } : column))
+    .filter(({ key }) => isDataKey(key))
   const wrapper = createEl('div')
   wrapper.setAttribute('data-repeater-root', '')
+  wrapper.style.minWidth = '0'
+  const tableWrapper = createEl('div')
+  tableWrapper.setAttribute('data-repeater-table-wrapper', '')
+  tableWrapper.style.overflowX = 'auto'
+  const emptyRow = createEl('tr')
+  const empty = createEl('td', emptyText)
+  emptyRow.append(empty)
+  empty.setAttribute('colspan', columns.length + 1)
+  empty.setAttribute('data-repeater-empty', '')
   const table = createEl('table')
 
   const thead = createEl('thead')
   const headerRow = createEl('tr')
   const headers = []
-  for (const header of columnKeys) {
+  for (const { key: header } of columns) {
     const headerEl = createEl('th', header)
     headerRow.append(headerEl)
     headers.push(headerEl)
@@ -34,81 +58,161 @@ function init(input, container, formatter = null) {
   table.append(thead)
 
   const tbody = createEl('tbody')
+  tbody.append(emptyRow)
   const rows = []
 
-  const tfoot = createEl('tfoot')
-  const actionRow = createEl('tr')
-  const action = createEl('td')
-  action.setAttribute('colspan', columnKeys.length + 1)
+  const action = createEl('div')
   action.setAttribute('data-repeater-action', '')
 
-  actionRow.append(action)
-  tfoot.append(actionRow)
-
-  table.append(tbody, tfoot)
-  wrapper.append(table)
+  table.append(tbody)
+  tableWrapper.append(table)
+  wrapper.append(tableWrapper, action)
+  updateVisibility()
 
   for (const item of items) {
     addRow(item)
   }
 
+  function hideElements(...els) {
+    els.forEach((el) => (el.style.display = 'none'))
+  }
+
+  function showElements(...els) {
+    els.forEach((el) => (el.style.display = ''))
+  }
+
+  function changeVisibility(mode, targets) {
+    const parts = new Map([
+      ['table', 'table'], [table, 'table'], [tableWrapper, 'table'],
+      ['empty', 'empty'], [empty, 'empty'], [emptyRow, 'empty'],
+      ['action', 'action'], [action, 'action'],
+    ])
+
+    for (const target of targets) {
+      const part = parts.get(target)
+      if (part) {
+        visibilityPreferences[part] = mode === 'toggle'
+          ? !visibilityPreferences[part]
+          : mode === 'show'
+      } else {
+        if (!target?.style) throw new TypeError('Expected a repeater part name or an element')
+        const visible = mode === 'toggle' ? target.style.display === 'none' : mode === 'show'
+        if (visible) showElements(target)
+        else hideElements(target)
+      }
+    }
+
+    updateVisibility()
+    return api
+  }
+
+  function show(...targets) {
+    return changeVisibility('show', targets)
+  }
+
+  function hide(...targets) {
+    return changeVisibility('hide', targets)
+  }
+
+  function toggle(...targets) {
+    return changeVisibility('toggle', targets)
+  }
+
+  function updateVisibility() {
+    const showTable = visibilityPreferences.table && rows.length > 0
+    const showEmpty = visibilityPreferences.empty && rows.length === 0 && emptyText != null
+    const showAction = visibilityPreferences.action &&
+      (maxNewItems == null || newItemsCount < maxNewItems)
+
+    if (showTable) showElements(thead)
+    else hideElements(thead)
+    if (showEmpty) showElements(emptyRow)
+    else hideElements(emptyRow)
+    if (showTable || showEmpty) showElements(tableWrapper, table)
+    else hideElements(tableWrapper, table)
+    if (showAction) showElements(action)
+    else hideElements(action)
+    if (showTable || showEmpty || showAction) showElements(wrapper)
+    else hideElements(wrapper)
+  }
+
   function addRow(item) {
     // An initially empty repeater gets its columns from the first added item.
-    if (columnKeys.length === 0 && rows.length === 0) {
-      columnKeys.push(...Object.keys(item).filter((key) => key !== 'edit'))
-      for (const key of columnKeys) {
+    if (keys == null && columns.length === 0 && rows.length === 0) {
+      columns.push(...Object.keys(item).filter(isDataKey).map((key) => ({ key })))
+      for (const { key } of columns) {
         const header = createEl('th', key)
         headerRow.insertBefore(header, actionHeader)
         headers.splice(headers.length - 1, 0, header)
       }
-      action.setAttribute('colspan', columnKeys.length + 1)
+      empty.setAttribute('colspan', columns.length + 1)
     }
 
     const row = createEl('tr')
     const cells = []
-    for (const key of columnKeys) {
-      const cell = createEl(
-        'td',
-        formatter ? formatter(key, item[key]) : item[key],
-      )
+    for (const { key, formatter: columnFormatter } of columns) {
+      const value = columnFormatter
+        ? columnFormatter(item[key], item)
+        : formatter
+          ? formatter(key, item[key])
+          : item[key]
+      const cell = createEl('td', value)
       cells.push(cell)
       row.append(cell)
     }
 
     const actionCell = createEl('td')
 
-    if (item['edit']) {
-      const editButton = createEl('button')
-      editButton.ariaLabel = 'edit row'
-      editButton.innerHTML = `
-        ${item.edit.label ?? 'edit'}
-      `
-      if (item.edit.classList) editButton.classList.add(...item.edit.classList)
-      editButton.type = 'button'
-      editButton.addEventListener('click', item.edit.action)
-      actionCell.append(editButton)
+    for (const [key, label] of [
+      ['editAction', 'edit'],
+      ['deleteAction', 'delete'],
+    ]) {
+      const config = item[key]
+      if (!config) continue
+
+      const button = createEl('button')
+      button.ariaLabel = `${label} row`
+      button.innerHTML = config.label ?? label
+      if (config.classList) button.classList.add(...config.classList)
+      button.type = 'button'
+      button.addEventListener(
+        'click',
+        config.action ??
+          (key === 'deleteAction'
+            ? () => removeItem(rows.findIndex((entry) => entry.row === row))
+            : null),
+      )
+      actionCell.append(button)
     }
 
     cells.push(actionCell)
     row.append(actionCell)
 
-    tbody.append(row)
+    tbody.insertBefore(row, emptyRow)
     rows.push({
       row,
       cells,
     })
+    updateVisibility()
   }
 
   function addItem(item) {
+    if (maxNewItems != null && newItemsCount >= maxNewItems) {
+      throw new RangeError(
+        `Cannot add more than ${maxNewItems} new items per form visit.`,
+      )
+    }
+
     items.push(item)
     addRow(item)
+    newItemFlags.push(true)
+    newItemsCount++
+    updateVisibility()
 
     input.value = JSON.stringify(
-      items.map((item) => {
-        delete item.edit
-        return item
-      }),
+      items.map(({ editAction, deleteAction, ...data }) => data),
     )
+
     return this
   }
 
@@ -117,6 +221,7 @@ function init(input, container, formatter = null) {
       return this
     const [removed] = rows.splice(index, 1)
     removed.row.remove()
+    updateVisibility()
     return this
   }
 
@@ -124,11 +229,11 @@ function init(input, container, formatter = null) {
     if (!Number.isInteger(index) || index < 0 || index >= items.length)
       return this
     items.splice(index, 1)
+    const [wasNew] = newItemFlags.splice(index, 1)
+    if (wasNew) newItemsCount--
+    updateVisibility()
     input.value = JSON.stringify(
-      items.map((item) => {
-        delete item.edit
-        return item
-      }),
+      items.map(({ editAction, deleteAction, ...data }) => data),
     )
 
     removeRow(index)
@@ -142,27 +247,40 @@ function init(input, container, formatter = null) {
 
   container.append(wrapper)
 
-  return {
+  const api = {
     items,
     container,
     wrapper,
+    tableWrapper,
+    empty,
+    emptyRow,
     table,
     thead,
     headerRow,
     headers,
     tbody,
     rows,
-    tfoot,
-    actionRow,
     action,
+    show,
+    hide,
+    toggle,
     addItem,
     addRow,
     removeItem,
     removeLastItem,
     removeRow,
+    setVisibility(changes) {
+      Object.assign(visibilityPreferences, changes)
+      updateVisibility()
+      return api
+    },
     addStyles(content) {
       registerStyles(content, container)
       return this
     },
   }
+
+  renderActions?.({ ...api, container: action })
+
+  return api
 }
