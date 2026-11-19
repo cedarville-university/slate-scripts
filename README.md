@@ -1,6 +1,6 @@
 # slate-scripts
 
-JavaScript helpers for enhancing Slate forms with date/time controls, image previews, syntax highlighting, and question-level behavior. The source uses browser-native JavaScript modules; no build step is required.
+JavaScript helpers for enhancing Slate forms with date/time controls, repeaters, image previews, syntax highlighting, and question-level behavior. The source uses browser-native JavaScript modules; no build step is required.
 
 ## Where to put scripts in Slate
 
@@ -146,6 +146,184 @@ Accepts an input element or CSS selector. Options default to:
 ```
 
 Call `.make()` first, then `.addStyles(css)` on its result. In view mode, a nonempty value also exposes `.expand()` and `.collapse()` on that result. Highlighting loads when expanded; if highlighting fails, the source is shown as plain text.
+
+### `repeater(inputSelector, options)`
+
+Turns an input or textarea containing a JSON array of objects into a table. Custom storage formats can be configured with `storage`. Accepts an element or CSS selector, initializes immediately, and keeps the original input for saving; no `.make()` call is needed. A blank value is treated as `[]`. The input must belong to a form. The repeater does not automatically disable actions in read-only mode: initialize it in **Edit Scripts/Styles** for editing, or explicitly hide actions for a display-only use case.
+
+| Option | Default | Behavior |
+| --- | --- | --- |
+| `keys` | `null` | Ordered array of key strings or `{ key, formatter }` objects. Defines columns even before items exist. If omitted, keys are inferred from the first item. |
+| `formatter` | `null` | Fallback `(key, value)` formatter. A column's `(value, item)` formatter takes precedence. Formatters affect displayed cells, not saved values. |
+| `emptyText` | `null` | Text displayed in a spanning table cell when empty. `null` hides the empty message. |
+| `maxNewItems` | `null` | Maximum number of items added during this initialization that may remain. Existing items do not count. `null` means unlimited; `0` prevents additions. |
+| `visibility` | `{ table: true, empty: true, action: true }` | Initial visibility preferences; partial objects are supported. |
+| `renderActions` | `null` | Callback called once after initialization to build arbitrary controls. |
+| `storage` | JSON parsing and serialization | `{ parse(value), serialize(items) }` converts between stored text and item objects. |
+| `container` | `input.parentElement` | Element where the repeater is appended. |
+
+`keys` also selects which item fields are displayed; other fields remain available to the storage serializer. `editAction`, `deleteAction`, and `format` are excluded from column inference and explicit keys. The table header is shown with item rows; when empty, only the configured empty message is displayed.
+
+#### Build controls with `renderActions`
+
+This example uses local module paths; for Slate, import from the deployed entry point containing the repeater. Replace the input selectors with your own. It initially displays existing items only, then reveals the add controls when another field differs from its original value.
+
+```js
+import { repeater } from './src/forms/index.js';
+
+const otherField = document.querySelector('#other-field');
+const originalValue = otherField.value;
+const reasons = repeater('#reasons-input', {
+  keys: [
+    'Name',
+    {
+      key: 'Date',
+      formatter: (value) => new Date(value).toLocaleDateString(),
+    },
+  ],
+  maxNewItems: 2,
+  emptyText: 'No reasons added',
+  visibility: { empty: false, action: false },
+  renderActions({ container, addItem }) {
+    container.innerHTML = `
+      <div>
+        <input data-reason placeholder="Reason" aria-label="Reason">
+        <button data-add type="button">Add</button>
+      </div>
+    `;
+    const reason = container.querySelector('[data-reason]');
+    const add = container.querySelector('[data-add]');
+
+    const addReason = () => {
+      const name = reason.value.trim();
+      if (!name) return;
+      addItem({
+        Name: name,
+        Date: new Date().toISOString(),
+        deleteAction: { label: 'Delete' },
+      });
+      reason.value = '';
+    };
+
+    add.addEventListener('click', addReason);
+    reason.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.isComposing) {
+        event.preventDefault();
+        addReason();
+      }
+    });
+  },
+});
+
+otherField.addEventListener('input', () => {
+  reasons.setVisibility({ action: otherField.value !== originalValue });
+});
+```
+
+The callback receives the returned API, except `container` refers to the **action bar**. Outside the callback, `reasons.container` refers to the repeater's parent container. Controls can use trusted `innerHTML` followed by scoped selectors, as above, or `createElement`. Use `textContent` or input `.value` for user-provided content. Keep buttons as `type="button"` and use an Enter handler rather than nesting a form inside the Slate form.
+
+Direct access remains available: omit `renderActions` and populate `reasons.action` yourself. The action bar sits below and outside the horizontally scrollable `tableWrapper`.
+
+#### Item actions and saving
+
+Pass action configurations on individual items:
+
+```js
+reasons.addItem({
+  Name: 'Example',
+  Date: new Date().toISOString(),
+  editAction: {
+    label: 'Edit',
+    classList: ['edit-button'],
+    action: (event) => { /* Open your own editor. */ },
+  },
+  deleteAction: {
+    label: 'Delete',
+    classList: ['delete-button'],
+    // Optional action(event); omitted here to remove this item automatically.
+  },
+});
+```
+
+Labels support trusted HTML and default to `'edit'` and `'delete'`. `classList` is an optional array of CSS class names. Provide an edit click handler; editing is application-defined. A custom delete handler replaces automatic deletion, so call `removeItem(index)` yourself if needed. Default deletion resolves the row's current index at click time.
+
+`addItem`, `removeItem`, and `removeLastItem` synchronize the original input's value using the configured serializer. `editAction` and `deleteAction` are omitted from saved JSON without removing them from the in-memory items. They must be supplied again when reconstructing actions on a later form visit. These methods do not dispatch `input` or `change` events.
+
+At `maxNewItems`, the action bar hides and further `addItem` calls throw `RangeError`. Removing an item added during this initialization frees a slot; removing an existing item does not. The bar reappears only if its visibility preference allows it.
+
+#### Custom storage formats
+
+The repeater always works with an array of objects internally. `storage.parse(value)` receives the original input string once during initialization and must return an array of non-null, non-array objects, including `[]` for an empty field. `storage.serialize(items)` runs after item additions and removals and must return a string. Both callbacks are synchronous. Invalid callback types or return types throw `TypeError`; errors thrown by a callback propagate to the caller. Initialization does not rewrite the stored value.
+
+Both callbacks are optional individually and default to JSON behavior. For a different format, supply both so saved values can be loaded again. The serializer receives shallow copies of item data with `editAction` and `deleteAction` omitted; the in-memory action configurations remain intact.
+
+For one item per line, with fields separated by ` | `:
+
+```js
+const reasons = repeater('#reasons-input', {
+  keys: ['Name', 'Date'],
+  storage: {
+    parse(value) {
+      if (!value.trim()) return [];
+      return value.split(/\r?\n/).map((line) => {
+        const fields = line.split(' | ');
+        if (fields.length !== 2) {
+          throw new Error('Each line must contain Name | Date');
+        }
+        const [Name, Date] = fields;
+        return { Name, Date };
+      });
+    },
+    serialize(items) {
+      return items.map(({ Name, Date }) => {
+        const fields = [String(Name ?? ''), String(Date ?? '')];
+        if (fields.some((value) => /[\r\n]/.test(value) || value.includes(' | '))) {
+          throw new Error('Values cannot contain newlines or " | "');
+        }
+        return fields.join(' | ');
+      }).join('\n');
+    },
+  },
+});
+```
+
+This stores text such as:
+
+```text
+Alice | 2026-11-19
+Bob | 2026-11-20
+```
+
+Use a textarea or hidden input for multiline storage. This example stores only `Name` and `Date` and rejects delimiter/newline characters rather than escaping them. Validate those characters in your add controls before calling `addItem`; serialization errors do not roll back changes already made to in-memory items and rendered rows. Existing JSON data must be converted before switching the field to this format.
+
+#### Visibility and returned API
+
+Visibility preferences persist across additions and removals:
+
+- `table`: allows existing item rows and their header to display.
+- `empty`: allows the empty message when no rows exist and `emptyText` is not `null`, independently of the `table` preference.
+- `action`: allows the action bar when the new-item limit has not been reached.
+
+If neither rows nor an empty message should display, the table and its scroll wrapper are hidden. If all parts are hidden, the root wrapper is hidden too.
+
+```js
+reasons.setVisibility({ action: true }); // Partial update; preserves other preferences.
+reasons.hide('table', 'empty');
+reasons.show(reasons.action);
+reasons.toggle('action');
+```
+
+`setVisibility`, `show`, `hide`, and `toggle` return the repeater API for chaining and are also available in `renderActions`. Helpers accept multiple part names (`'table'`, `'empty'`, `'action'`) or their elements. `tableWrapper` maps to the table preference; `emptyRow` maps to the empty preference. Toggling a managed part flips its preference, not its current effective visibility: limits and empty-state rules still apply. Custom elements are also accepted and have their inline `display` changed directly.
+
+The returned API exposes:
+
+- `items`: live array of item objects. Use item methods rather than mutating the array directly.
+- `addItem(item)`, `removeItem(index)`, `removeLastItem()`: manage saved items. Indexes are zero-based; invalid removal indexes do nothing.
+- `addRow(item)`, `removeRow(index)`: low-level rendering methods only; they do not update stored items or new-item counts. Prefer the item methods to keep data and rows aligned.
+- `addStyles(css)`: adds styles scoped to the repeater's parent container.
+- `container`, `wrapper`, `tableWrapper`, `table`, `thead`, `headerRow`, `headers`, `tbody`, `rows`, `empty`, `emptyRow`, and `action`: element and row references. Each `rows` entry contains `{ row, cells }`; the final cell holds item actions.
+
+Style with `[data-repeater-root]`, `[data-repeater-table-wrapper]`, `[data-repeater-empty]`, `[data-repeater-action]`, and `[data-repeater-action-col]`. There is no `tfoot`; the action bar is a separate `<div>`.
 
 ## Styling and browser requirements
 

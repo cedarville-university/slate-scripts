@@ -17,9 +17,22 @@ function init(
     formatter = null,
     renderActions = null,
     visibility = {},
+    storage = {},
   },
 ) {
-  const items = JSON.parse(input.value.trim() || '[]')
+  const {
+    parse = (value) => JSON.parse(value.trim() || '[]'),
+    serialize = (items) => JSON.stringify(items),
+  } = storage
+  if (typeof parse !== 'function' || typeof serialize !== 'function') {
+    throw new TypeError('storage.parse and storage.serialize must be functions')
+  }
+  const items = parse(input.value)
+  if (!Array.isArray(items) || items.some((item) =>
+    item == null || typeof item !== 'object' || Array.isArray(item)
+  )) {
+    throw new TypeError('storage.parse must return an array of item objects')
+  }
   const newItemFlags = items.map(() => false)
   let newItemsCount = 0
   const visibilityPreferences = { table: true, empty: true, action: true, ...visibility }
@@ -196,6 +209,16 @@ function init(
     updateVisibility()
   }
 
+  function saveItems() {
+    const value = serialize(
+      items.map(({ editAction, deleteAction, ...data }) => data),
+    )
+    if (typeof value !== 'string') {
+      throw new TypeError('storage.serialize must return a string')
+    }
+    input.value = value
+  }
+
   function addItem(item) {
     if (maxNewItems != null && newItemsCount >= maxNewItems) {
       throw new RangeError(
@@ -209,9 +232,7 @@ function init(
     newItemsCount++
     updateVisibility()
 
-    input.value = JSON.stringify(
-      items.map(({ editAction, deleteAction, ...data }) => data),
-    )
+    saveItems()
 
     return this
   }
@@ -232,9 +253,7 @@ function init(
     const [wasNew] = newItemFlags.splice(index, 1)
     if (wasNew) newItemsCount--
     updateVisibility()
-    input.value = JSON.stringify(
-      items.map(({ editAction, deleteAction, ...data }) => data),
-    )
+    saveItems()
 
     removeRow(index)
     return this
