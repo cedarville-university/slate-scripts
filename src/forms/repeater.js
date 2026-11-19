@@ -28,6 +28,7 @@ function init(input, container) {
   headers.push(actionHeader)
 
   thead.append(headerRow)
+
   table.append(thead)
 
   const tbody = createEl('tbody')
@@ -77,9 +78,9 @@ function init(input, container) {
       editButton.innerHTML = `
         ${item.edit.label ?? 'edit'}
       `
+      if (item.edit.classlist) editButton.classList(...item.edit.classlist)
       editButton.type = 'button'
       editButton.addEventListener('click', item.edit.action)
-      console.log(editButton)
       actionCell.append(editButton)
     }
 
@@ -107,14 +108,16 @@ function init(input, container) {
   }
 
   function removeRow(index) {
-    if (!Number.isInteger(index) || index < 0 || index >= rows.length) return this
+    if (!Number.isInteger(index) || index < 0 || index >= rows.length)
+      return this
     const [removed] = rows.splice(index, 1)
     removed.row.remove()
     return this
   }
 
   function removeItem(index) {
-    if (!Number.isInteger(index) || index < 0 || index >= items.length) return this
+    if (!Number.isInteger(index) || index < 0 || index >= items.length)
+      return this
     items.splice(index, 1)
     input.value = JSON.stringify(
       items.map((item) => {
