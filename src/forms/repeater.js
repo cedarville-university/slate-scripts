@@ -78,7 +78,7 @@ function init(input, container) {
       editButton.innerHTML = `
         ${item.edit.label ?? 'edit'}
       `
-      if (item.edit.classlist) editButton.classList(...item.edit.classlist)
+      if (item.edit.classlist) editButton.classList.add(...item.edit.classList)
       editButton.type = 'button'
       editButton.addEventListener('click', item.edit.action)
       actionCell.append(editButton)
