@@ -1,15 +1,17 @@
 import { resolveInputSelector } from '../helpers/forms.js'
 import { createEl, registerStyles } from '../helpers/utlity.js'
 
-export default function repeater(inputSelector) {
+export default function repeater(inputSelector, formatter = null) {
   const { input } = resolveInputSelector(inputSelector)
 
-  return init(input, input.parentElement)
+  return init(input, input.parentElement, formatter)
 }
 
-function init(input, container) {
+function init(input, container, formatter = null) {
   const items = JSON.parse(input.value.trim() || '[]')
-  const columnKeys = Object.keys(items[0] ?? {}).filter((key) => key !== 'edit')
+  const columnKeys = Object.keys(items[0] ?? {}).filter(
+    (key) => key !== 'edit' && key !== 'format',
+  )
   const wrapper = createEl('div')
   wrapper.setAttribute('data-repeater-root', '')
   const table = createEl('table')
@@ -65,7 +67,10 @@ function init(input, container) {
     const row = createEl('tr')
     const cells = []
     for (const key of columnKeys) {
-      const cell = createEl('td', item[key])
+      const cell = createEl(
+        'td',
+        formatter ? formatter(key, item[key]) : item[key],
+      )
       cells.push(cell)
       row.append(cell)
     }
