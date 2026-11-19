@@ -247,7 +247,7 @@ reasons.addItem({
 
 Labels support trusted HTML and default to `'edit'` and `'delete'`. `classList` is an optional array of CSS class names. Provide an edit click handler; editing is application-defined. A custom delete handler replaces automatic deletion, so call `removeItem(index)` yourself if needed. Default deletion resolves the row's current index at click time.
 
-`addItem`, `removeItem`, and `removeLastItem` synchronize the original input's value using the configured serializer. `editAction` and `deleteAction` are omitted from saved JSON without removing them from the in-memory items. They must be supplied again when reconstructing actions on a later form visit. These methods do not dispatch `input` or `change` events.
+`addItem`, `removeItem`, `removeLastItem`, `removeLastNewItem`, and `removeNewItems` synchronize the original input's value using the configured serializer. `editAction` and `deleteAction` are omitted from saved JSON without removing them from the in-memory items. They must be supplied again when reconstructing actions on a later form visit. These methods do not dispatch `input` or `change` events.
 
 At `maxNewItems`, the action bar hides and further `addItem` calls throw `RangeError`. Removing an item added during this initialization frees a slot; removing an existing item does not. The bar reappears only if its visibility preference allows it.
 
@@ -319,6 +319,8 @@ The returned API exposes:
 
 - `items`: live array of item objects. Use item methods rather than mutating the array directly.
 - `addItem(item)`, `removeItem(index)`, `removeLastItem()`: manage saved items. Indexes are zero-based; invalid removal indexes do nothing.
+- `removeLastNewItem()`: removes the most recently added item still present from this initialization, or does nothing if none remain. Existing items are preserved. Available in `renderActions` and returns the repeater API for chaining.
+- `removeNewItems()`: removes all items added during this initialization while preserving existing items. Does nothing if none remain. Available in `renderActions` and returns the repeater API for chaining; counts, storage, and visibility update automatically.
 - `addRow(item)`, `removeRow(index)`: low-level rendering methods only; they do not update stored items or new-item counts. Prefer the item methods to keep data and rows aligned.
 - `addStyles(css)`: adds styles scoped to the repeater's parent container.
 - `container`, `wrapper`, `tableWrapper`, `table`, `thead`, `headerRow`, `headers`, `tbody`, `rows`, `empty`, `emptyRow`, and `action`: element and row references. Each `rows` entry contains `{ row, cells }`; the final cell holds item actions.

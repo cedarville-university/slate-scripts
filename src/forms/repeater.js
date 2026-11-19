@@ -264,6 +264,19 @@ function init(
     return this
   }
 
+  function removeLastNewItem() {
+    const index = newItemFlags.lastIndexOf(true)
+    if (index !== -1) removeItem(index)
+    return api
+  }
+
+  function removeNewItems() {
+    for (let index = newItemFlags.length - 1; index >= 0; index--) {
+      if (newItemFlags[index]) removeItem(index)
+    }
+    return api
+  }
+
   container.append(wrapper)
 
   const api = {
@@ -287,6 +300,8 @@ function init(
     addRow,
     removeItem,
     removeLastItem,
+    removeLastNewItem,
+    removeNewItems,
     removeRow,
     setVisibility(changes) {
       Object.assign(visibilityPreferences, changes)
