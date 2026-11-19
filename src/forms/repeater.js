@@ -18,6 +18,7 @@ function init(
     renderActions = null,
     visibility = {},
     storage = {},
+    styles = null,
   },
 ) {
   const {
@@ -313,6 +314,8 @@ function init(
       return this
     },
   }
+
+  if (styles != null) api.addStyles(styles)
 
   renderActions?.({ ...api, container: action })
 

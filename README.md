@@ -159,10 +159,39 @@ Turns an input or textarea containing a JSON array of objects into a table. Cust
 | `maxNewItems` | `null` | Maximum number of items added during this initialization that may remain. Existing items do not count. `null` means unlimited; `0` prevents additions. |
 | `visibility` | `{ table: true, empty: true, action: true }` | Initial visibility preferences; partial objects are supported. |
 | `renderActions` | `null` | Callback called once after initialization to build arbitrary controls. |
+| `styles` | `null` | CSS string applied once before `renderActions`, using the same parent-container scope as `addStyles(css)`. |
 | `storage` | JSON parsing and serialization | `{ parse(value), serialize(items) }` converts between stored text and item objects. |
 | `container` | `input.parentElement` | Element where the repeater is appended. |
 
 `keys` also selects which item fields are displayed; other fields remain available to the storage serializer. `editAction`, `deleteAction`, and `format` are excluded from column inference and explicit keys. The table header is shown with item rows; when empty, only the configured empty message is displayed.
+
+#### Reuse options and styles
+
+Use a shared options object and override individual options when initializing each repeater:
+
+```js
+const repeaterDefaults = {
+  maxNewItems: 2,
+  emptyText: 'No items added',
+  styles: `
+    [data-repeater-root] table { width: 100%; }
+    [data-repeater-action] { margin-block-start: 0.5rem; }
+    [data-repeater-empty] { color: #666; }
+  `,
+};
+
+const reasons = repeater('#reasons-input', {
+  ...repeaterDefaults,
+  keys: ['Name', 'Date'],
+});
+const contacts = repeater('#contacts-input', {
+  ...repeaterDefaults,
+  keys: ['Name', 'Email'],
+  maxNewItems: 5,
+});
+```
+
+`styles: null` skips style registration. A supplied string must contain non-whitespace CSS, as with `addStyles`. Each repeater registers its own scoped style element; `addStyles(css)` remains available for additional styles afterward. Spreading options is a shallow merge, so merge nested options separately when overriding only some of their properties.
 
 #### Build controls with `renderActions`
 
