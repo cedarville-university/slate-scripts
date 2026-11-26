@@ -1,6 +1,6 @@
 import { isEditing } from '../helpers/forms.js'
 
-export function formControl(formSelector) {
+export function formControl(formSelector, { onSubmit = null } = {}) {
   const id = crypto.randomUUID()
   const form =
     formSelector instanceof HTMLFormElement
@@ -54,6 +54,27 @@ export function formControl(formSelector) {
           return () => input.removeEventListener(event, handler)
         }
 
+        const validators = []
+        let errors = []
+        const errorEl = document.createElement('span')
+        errorEl.dataset.control = 'error'
+        errorEl.style.display = 'none'
+        question.append(errorEl)
+
+        const showErrors = (messages) => {
+          question.setAttribute('data-invalid', '')
+          input.setAttribute('aria-invalid', 'true')
+          errorEl.textContent = messages.join(', ')
+          errorEl.style.display = ''
+        }
+
+        const clearErrors = () => {
+          question.removeAttribute('data-invalid')
+          input.removeAttribute('aria-invalid')
+          errorEl.textContent = ''
+          errorEl.style.display = ''
+        }
+
         return [
           label.textContent.trim(),
           {
@@ -69,13 +90,57 @@ export function formControl(formSelector) {
                 fn?.({ question, label, input, style })
               })
             },
+            addValidator: (fn) => {
+              validators.push(fn)
+            },
+            validate: () => {
+              const messages = validators
+                .map((v) => v?.({ input }))
+                .filter((message) => message !== true)
+                .map((message) => message)
+
+              const isValid = messages.length === 0
+
+              if (!isValid) {
+                on('input', clearErrors, { once: true })
+                showErrors(messages)
+
+                return false
+              }
+
+              clearErrors()
+              return true
+            },
+            clearErrors,
           },
         ]
       }),
   )
 
+  const submitButton = form.querySelector('button.default')
+
+  if (submitButton) {
+    submitButton.addEventListener(
+      'click',
+      (e) => {
+        // onSubmit
+        if (onSubmit?.() === false) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+        }
+
+        if (![...questions].every(([, question]) => question.validate())) {
+          e.preventDefault()
+          e.stopImmediatePropagation()
+        }
+      },
+      true,
+    )
+  }
+
   return {
     _form: form,
+    _submitButton: submitButton,
     _questions: questions,
     _isEditing: editing,
     style(styles) {
