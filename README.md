@@ -120,6 +120,27 @@ Each question exposes `question` (the question container), `label`, `input`, `.s
 - `.addValidator(fn, onClear = null)` registers a synchronous validator receiving `{ input }`. Return `true` to pass, an error message string to fail, or `[message, optionalCleanupFn]` to attach cleanup to that error. Return `true` explicitly for valid values.
 - `.validate()` clears the previous validation result, runs the question's validators, and returns a boolean. Errors appear as comma-separated text in `[data-control="error"]`; the question receives `data-invalid` and the input receives `aria-invalid="true"`.
 - `.clearErrors()` clears the displayed errors and invalid attributes and runs cleanup. Errors also clear on the next `input` or `change` event; clearing does not rerun validation.
+- `.clearErrorsOn(target, events = ['input', 'change'])` registers additional elements that clear this question's errors. Pass an element or an iterable collection of elements (such as an array or `NodeList`), plus one event name or an iterable collection of event names. Resolve selectors to elements first. Empty collections, invalid elements, and empty or whitespace-containing event names throw `TypeError`. The method returns an unsubscribe function for that registration.
+
+Custom clear triggers stay registered across validation attempts and use the same cleanup behavior as `.clearErrors()`. They supplement the original input's automatic `input` and `change` triggers. Unsubscribing removes only that registration and does not clear existing errors.
+
+```js
+formControl('#your-form-id')
+  .question('Reasons', ({ question }) => {
+    const customInput = document.querySelector('#custom-reason')
+    const dismissButton = document.querySelector('#dismiss-reason-errors')
+
+    if (customInput) question.clearErrorsOn(customInput)
+    if (dismissButton) {
+      const unsubscribe = question.clearErrorsOn(dismissButton, 'click')
+      // Call unsubscribe() when this custom control is removed.
+    }
+  })
+```
+
+For multiple elements or events, use `question.clearErrorsOn(elements, ['input', 'change'])`. Events bubbling from descendants also clear errors when registered on a container. Clearing only dismisses the current validation result; the next validation attempt checks the value again.
+
+When clearing depends on an operation succeeding, call `.clearErrors()` after that operation instead of registering a click trigger. For example, `reasons.addItem(item)` followed by `question.clearErrors()` preserves errors if adding the item throws.
 
 The cleanup returned with a message runs once when that validation result clears, including when `.validate()` replaces it. It is then discarded. The generic `onClear` passed to `.addValidator()` stays registered for future validation cycles. When a question's errors clear, all its registered generic `onClear` callbacks run, even for validators that passed, after the message-specific cleanups. Calling `.clearErrors()` again without new errors does not rerun these callbacks. Cleanup callbacks receive no arguments.
 
@@ -397,5 +418,7 @@ Use a modern browser with JavaScript modules, `crypto.randomUUID()`, and CSS `@s
 The host page must allow scripts from `cdn.jsdelivr.net`. The code highlighter additionally loads highlight.js modules from `esm.sh` and theme styles from `cdnjs.cloudflare.com`.
 
 ## Local development
+
+To run the validation trigger regression checks, serve the repository through a local HTTP server (for example, `python3 -m http.server 8000`) and open `http://localhost:8000/tests/form.test.html`. The page reports each result without requiring dependencies or a build step.
 
 Serve the repository through a local HTTP server and open `test-page.html`. That page imports `./src/forms/index.js` and demonstrates editable and read-only forms. Keep the `forms` and `helpers` folder structure intact when hosting the source so relative imports continue to resolve.

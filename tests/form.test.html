@@ -1,0 +1,166 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>formControl clearErrorsOn tests</title>
+<pre id="results">Running…</pre>
+<script type="module">
+  import { formControl } from '../src/forms/form.js'
+
+  const results = document.querySelector('#results')
+  const lines = []
+  let failures = 0
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(message)
+  }
+  const fire = (element, event) => element.dispatchEvent(new Event(event, { bubbles: true }))
+  const invalid = (question) => question.question.hasAttribute('data-invalid')
+
+  const test = (name, run) => {
+    const form = document.createElement('form')
+    form.action = `${location.origin}/?cmd=form_edit`
+    form.innerHTML = `
+      <div class="form_question"><label>Reason</label><input></div>
+      <div class="form_question"><label>Other</label><input></div>
+      <div class="actions">
+        <button type="button"><span>Dismiss</span></button>
+        <button type="button">Another</button>
+      </div>
+    `
+    document.body.append(form)
+    try {
+      const control = formControl(form)
+      const question = control._questions.get('Reason')
+      const other = control._questions.get('Other')
+      const cleanupOrder = []
+      let validations = 0
+      question.addValidator(() => {
+        validations++
+        return ['Required', () => cleanupOrder.push('message')]
+      }, () => cleanupOrder.push('generic'))
+      other.addValidator(() => 'Other is required')
+      run({
+        form, question, other, cleanupOrder,
+        validations: () => validations,
+        buttons: form.querySelectorAll('button'),
+      })
+      lines.push(`PASS ${name}`)
+    } catch (error) {
+      failures++
+      lines.push(`FAIL ${name}: ${error.message}`)
+    } finally {
+      form.remove()
+    }
+  }
+
+  test('custom click clears only its question and runs cleanup once', ({ question, other, buttons, cleanupOrder, validations }) => {
+    question.clearErrorsOn(buttons[0], 'click')
+    question.validate()
+    other.validate()
+    fire(buttons[0], 'click')
+    assert(!invalid(question), 'Question remained invalid')
+    assert(invalid(other), 'Unrelated question was cleared')
+    assert(!question.input.hasAttribute('aria-invalid'), 'aria-invalid remained')
+    assert(question.question.querySelector('[data-control="error"]').textContent === '', 'Error text remained')
+    assert(cleanupOrder.join(',') === 'message,generic', 'Cleanup order or count differed')
+    fire(buttons[0], 'click')
+    fire(question.input, 'input')
+    assert(cleanupOrder.length === 2, 'Cleanup repeated without new errors')
+    assert(validations() === 1, 'Clearing reran validation')
+  })
+
+  test('registration persists across validation attempts and manual clearing', ({ question, buttons, cleanupOrder }) => {
+    question.clearErrorsOn(buttons[0], 'click')
+    for (let cycle = 0; cycle < 3; cycle++) {
+      question.validate()
+      fire(buttons[0], 'click')
+      assert(!invalid(question), 'Trigger stopped clearing')
+    }
+    question.validate()
+    question.clearErrors()
+    question.validate()
+    fire(buttons[0], 'click')
+    assert(!invalid(question) && cleanupOrder.length === 10, 'Manual clearing removed registration')
+  })
+
+  test('NodeList targets and multiple event names work', ({ question, buttons }) => {
+    question.clearErrorsOn(buttons, ['input', 'change'])
+    for (const button of buttons) {
+      for (const event of ['input', 'change']) {
+        question.validate()
+        fire(button, event)
+        assert(!invalid(question), `${event} failed on collection target`)
+      }
+    }
+  })
+
+  test('default events supplement original input events', ({ question, buttons }) => {
+    question.clearErrorsOn(buttons[0])
+    for (const element of [buttons[0], question.input]) {
+      for (const event of ['input', 'change']) {
+        question.validate()
+        fire(element, event)
+        assert(!invalid(question), `${event} failed`)
+      }
+    }
+  })
+
+  test('container handles bubbling events from descendants', ({ form, question, buttons }) => {
+    question.clearErrorsOn(form.querySelector('.actions'), 'click')
+    question.validate()
+    fire(buttons[0].firstElementChild, 'click')
+    assert(!invalid(question), 'Descendant click did not clear errors')
+  })
+
+  test('unsubscribe preserves errors and other registrations', ({ question, buttons, cleanupOrder }) => {
+    const unsubscribe = question.clearErrorsOn(buttons[0], 'click')
+    const unsubscribeOther = question.clearErrorsOn(buttons[0], 'click')
+    unsubscribe()
+    unsubscribe()
+    question.validate()
+    fire(buttons[0], 'click')
+    assert(!invalid(question), 'Unsubscribe removed overlapping registration')
+    question.validate()
+    unsubscribeOther()
+    assert(invalid(question) && cleanupOrder.length === 2, 'Unsubscribe cleared errors')
+    fire(buttons[0], 'click')
+    assert(invalid(question), 'Unsubscribed listener still active')
+    fire(question.input, 'change')
+    assert(!invalid(question), 'Unsubscribe removed default listener')
+  })
+
+  test('custom registration on original input cannot remove its defaults', ({ question }) => {
+    const unsubscribe = question.clearErrorsOn(question.input)
+    question.validate()
+    unsubscribe()
+    fire(question.input, 'input')
+    assert(!invalid(question), 'Default input listener removed')
+    question.validate()
+    fire(question.input, 'change')
+    assert(!invalid(question), 'Default change listener removed')
+  })
+
+  test('invalid arguments fail before binding any listeners', ({ question, buttons }) => {
+    const invalidArgs = [
+      [null, 'click'],
+      [[], 'click'],
+      [[buttons[0], null], 'click'],
+      ['#selector', 'click'],
+      [buttons[0], []],
+      [buttons[0], ['click', '']],
+      [buttons[0], ['click', null]],
+      [buttons[0], 'click change'],
+    ]
+    for (const args of invalidArgs) {
+      let threw = false
+      try { question.clearErrorsOn(...args) } catch (error) {
+        threw = error instanceof TypeError
+      }
+      assert(threw, 'Expected TypeError')
+    }
+    question.validate()
+    fire(buttons[0], 'click')
+    assert(invalid(question), 'Invalid registration left a listener behind')
+  })
+
+  results.textContent = `${lines.join('\n')}\n${lines.length - failures}/${lines.length} passed`
+  document.documentElement.dataset.testStatus = failures ? 'failed' : 'passed'
+</script>

@@ -84,6 +84,45 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
           }
         }
 
+        const clearErrorsOn = (target, events = ['input', 'change']) => {
+          const targets =
+            target instanceof Element ? [target] : Array.from(target ?? [])
+          const eventNames =
+            typeof events === 'string' ? [events] : Array.from(events ?? [])
+
+          if (
+            !targets.length ||
+            targets.some((element) => !(element instanceof Element))
+          ) {
+            throw new TypeError(
+              'clearErrorsOn requires an element or a collection of elements',
+            )
+          }
+          if (
+            !eventNames.length ||
+            eventNames.some(
+              (event) => typeof event !== 'string' || !event.trim() || /\s/.test(event),
+            )
+          ) {
+            throw new TypeError(
+              'clearErrorsOn requires an event name or a collection of event names',
+            )
+          }
+
+          // Give each registration its own listener so unsubscribing it does not
+          // remove another registration or the original input's default listeners.
+          const handler = () => clearErrors()
+          targets.forEach((element) => {
+            eventNames.forEach((event) => element.addEventListener(event, handler))
+          })
+
+          return () => {
+            targets.forEach((element) => {
+              eventNames.forEach((event) => element.removeEventListener(event, handler))
+            })
+          }
+        }
+
         return [
           label.textContent.trim(),
           {
@@ -129,6 +168,7 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
               return true
             },
             clearErrors,
+            clearErrorsOn,
           },
         ]
       }),
