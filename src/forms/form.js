@@ -55,7 +55,7 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
         }
 
         const validators = []
-        let errors = []
+        let errorCleanups = []
         const errorEl = document.createElement('span')
         errorEl.dataset.control = 'error'
         errorEl.style.display = 'none'
@@ -76,6 +76,9 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
           input.removeAttribute('aria-invalid')
           errorEl.textContent = ''
           errorEl.style.display = ''
+          const cleanups = errorCleanups
+          errorCleanups = []
+          cleanups.forEach((cleanup) => cleanup())
           if (hadErrors) {
             validators.forEach(([, cleanup]) => cleanup?.())
           }
@@ -100,10 +103,18 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
               validators.push([fn, onClear])
             },
             validate: () => {
+              clearErrors()
+
               const messages = validators
                 .map(([v]) => v?.({ input }))
                 .filter((message) => message !== true)
-                .map((message) => message)
+                .map((result) => {
+                  if (!Array.isArray(result)) return result
+
+                  const [message, cleanup] = result
+                  if (typeof cleanup === 'function') errorCleanups.push(cleanup)
+                  return message
+                })
 
               const isValid = messages.length === 0
 
@@ -115,7 +126,6 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
                 return false
               }
 
-              clearErrors()
               return true
             },
             clearErrors,
@@ -130,13 +140,14 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
     submitButton.addEventListener(
       'click',
       (e) => {
-        // onSubmit
-        if (onSubmit?.() === false) {
+        // run validation first
+        if (![...questions].every(([, question]) => question.validate())) {
           e.preventDefault()
           e.stopImmediatePropagation()
         }
 
-        if (![...questions].every(([, question]) => question.validate())) {
+        // onSubmit
+        if (onSubmit?.() === false) {
           e.preventDefault()
           e.stopImmediatePropagation()
         }

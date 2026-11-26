@@ -104,7 +104,7 @@ Place this in **Edit Scripts/Styles** to generate a slug while someone edits the
 
 ## API notes
 
-### `formControl(formSelector)`
+### `formControl(formSelector, { onSubmit = null } = {})`
 
 Accepts a CSS selector or an `HTMLFormElement`. Its methods can be chained:
 
@@ -114,6 +114,38 @@ Accepts a CSS selector or an `HTMLFormElement`. Its methods can be chained:
 - `.addStyles(css)` appends CSS scoped to the form using `@scope`.
 
 Each question exposes `question` (the question container), `label`, `input`, `.style(styles, applyTo = 'input')`, `.on(event, handler, options)`, and `.effect(callback)`. Style targets are `'input'`, `'label'`, and `'question'`. `.on()` returns an unsubscribe function. `.effect()` runs immediately and again when the original input emits an `input` event.
+
+#### Question validation
+
+- `.addValidator(fn, onClear = null)` registers a synchronous validator receiving `{ input }`. Return `true` to pass, an error message string to fail, or `[message, optionalCleanupFn]` to attach cleanup to that error. Return `true` explicitly for valid values.
+- `.validate()` clears the previous validation result, runs the question's validators, and returns a boolean. Errors appear as comma-separated text in `[data-control="error"]`; the question receives `data-invalid` and the input receives `aria-invalid="true"`.
+- `.clearErrors()` clears the displayed errors and invalid attributes and runs cleanup. Errors also clear on the next `input` or `change` event; clearing does not rerun validation.
+
+The cleanup returned with a message runs once when that validation result clears, including when `.validate()` replaces it. It is then discarded. The generic `onClear` passed to `.addValidator()` stays registered for future validation cycles. When a question's errors clear, all its registered generic `onClear` callbacks run, even for validators that passed, after the message-specific cleanups. Calling `.clearErrors()` again without new errors does not rerun these callbacks. Cleanup callbacks receive no arguments.
+
+```js
+formControl('#your-form-id')
+  .question('Reason', ({ question }) => {
+    question.addValidator(
+      ({ input }) => {
+        if (input.value.trim()) return true;
+
+        const previousBackground = input.style.backgroundColor;
+        input.style.backgroundColor = '#fff0f0';
+
+        return ['Reason is required', () => {
+          input.style.backgroundColor = previousBackground;
+        }];
+      },
+      () => {
+        // Runs whenever this question's errors clear; stays registered.
+        console.log('Reason errors cleared');
+      },
+    );
+  });
+```
+
+Validation runs automatically when the form's `button.default` is clicked. The click is blocked if a question fails; questions are checked in order until the first failure. The optional form-level `onSubmit()` callback runs after that validation attempt, including when validation fails, and can also block the click by returning `false`. For other submission paths, call the questions' `.validate()` methods explicitly.
 
 ### `datepicker(inputSelector, options)`
 
