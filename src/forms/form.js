@@ -69,10 +69,16 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
         }
 
         const clearErrors = () => {
+          input.removeEventListener('input', clearErrors)
+          input.removeEventListener('change', clearErrors)
+          const hadErrors = question.hasAttribute('data-invalid')
           question.removeAttribute('data-invalid')
           input.removeAttribute('aria-invalid')
           errorEl.textContent = ''
           errorEl.style.display = ''
+          if (hadErrors) {
+            validators.forEach(([, cleanup]) => cleanup?.())
+          }
         }
 
         return [
@@ -90,12 +96,12 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
                 fn?.({ question, label, input, style })
               })
             },
-            addValidator: (fn) => {
-              validators.push(fn)
+            addValidator: (fn, onClear = null) => {
+              validators.push([fn, onClear])
             },
             validate: () => {
               const messages = validators
-                .map((v) => v?.({ input }))
+                .map(([v]) => v?.({ input }))
                 .filter((message) => message !== true)
                 .map((message) => message)
 
@@ -103,6 +109,7 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
 
               if (!isValid) {
                 on('input', clearErrors, { once: true })
+                on('change', clearErrors, { once: true })
                 showErrors(messages)
 
                 return false
