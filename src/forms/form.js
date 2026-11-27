@@ -55,6 +55,7 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
         }
 
         const validators = []
+        const clearCallbacks = new Set()
         let errorCleanups = []
         const errorEl = document.createElement('span')
         errorEl.dataset.control = 'error'
@@ -69,8 +70,6 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
         }
 
         const clearErrors = () => {
-          input.removeEventListener('input', clearErrors)
-          input.removeEventListener('change', clearErrors)
           const hadErrors = question.hasAttribute('data-invalid')
           question.removeAttribute('data-invalid')
           input.removeAttribute('aria-invalid')
@@ -81,10 +80,15 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
           cleanups.forEach((cleanup) => cleanup())
           if (hadErrors) {
             validators.forEach(([, cleanup]) => cleanup?.())
+            Array.from(clearCallbacks).forEach((cleanup) => cleanup())
           }
         }
 
-        const clearErrorsOn = (target, events = ['input', 'change']) => {
+        const clearErrorsOn = (
+          target,
+          events = ['input', 'change'],
+          { test = null, onClear = null } = {},
+        ) => {
           const targets =
             target instanceof Element ? [target] : Array.from(target ?? [])
           const eventNames =
@@ -108,15 +112,34 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
               'clearErrorsOn requires an event name or a collection of event names',
             )
           }
+          if (test !== null && typeof test !== 'function') {
+            throw new TypeError('clearErrorsOn test must be a function or null')
+          }
+          if (onClear !== null && typeof onClear !== 'function') {
+            throw new TypeError('clearErrorsOn onClear must be a function or null')
+          }
 
           // Give each registration its own listener so unsubscribing it does not
-          // remove another registration or the original input's default listeners.
-          const handler = () => clearErrors()
+          // remove another registration.
+          const cleanup = () => onClear?.()
+          const handler = (event) => {
+            if (!question.hasAttribute('data-invalid')) return
+            if (
+              test !== null &&
+              test({ event, target: event.currentTarget, input, question, label }) !==
+                true
+            ) {
+              return
+            }
+            clearErrors()
+          }
+          clearCallbacks.add(cleanup)
           targets.forEach((element) => {
             eventNames.forEach((event) => element.addEventListener(event, handler))
           })
 
           return () => {
+            clearCallbacks.delete(cleanup)
             targets.forEach((element) => {
               eventNames.forEach((event) => element.removeEventListener(event, handler))
             })
@@ -158,8 +181,6 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
               const isValid = messages.length === 0
 
               if (!isValid) {
-                on('input', clearErrors, { once: true })
-                on('change', clearErrors, { once: true })
                 showErrors(messages)
 
                 return false

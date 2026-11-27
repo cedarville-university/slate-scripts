@@ -92,8 +92,20 @@
     }
   })
 
-  test('default events supplement original input events', ({ question, buttons }) => {
+  test('unregistered input and change events preserve errors and cleanup', ({ question, cleanupOrder }) => {
+    question.validate()
+    for (const event of ['input', 'change']) {
+      fire(question.input, event)
+      assert(invalid(question), `${event} implicitly cleared errors`)
+      assert(question.input.getAttribute('aria-invalid') === 'true', 'Invalid attribute was cleared')
+      assert(question.question.querySelector('[data-control="error"]').textContent === 'Required', 'Error message was cleared')
+      assert(cleanupOrder.length === 0, 'Unregistered event ran cleanup')
+    }
+  })
+
+  test('default event names work on explicitly registered elements', ({ question, buttons }) => {
     question.clearErrorsOn(buttons[0])
+    question.clearErrorsOn(question.input)
     for (const element of [buttons[0], question.input]) {
       for (const event of ['input', 'change']) {
         question.validate()
@@ -124,18 +136,18 @@
     fire(buttons[0], 'click')
     assert(invalid(question), 'Unsubscribed listener still active')
     fire(question.input, 'change')
-    assert(!invalid(question), 'Unsubscribe removed default listener')
+    assert(invalid(question), 'Unregistered input cleared errors')
   })
 
-  test('custom registration on original input cannot remove its defaults', ({ question }) => {
+  test('unsubscribing original input disables its clearing across validation cycles', ({ question }) => {
     const unsubscribe = question.clearErrorsOn(question.input)
     question.validate()
     unsubscribe()
     fire(question.input, 'input')
-    assert(!invalid(question), 'Default input listener removed')
+    assert(invalid(question), 'Unsubscribed input listener still cleared errors')
     question.validate()
     fire(question.input, 'change')
-    assert(!invalid(question), 'Default change listener removed')
+    assert(invalid(question), 'Revalidation restored implicit clearing')
   })
 
   test('invalid arguments fail before binding any listeners', ({ question, buttons }) => {
@@ -159,6 +171,123 @@
     question.validate()
     fire(buttons[0], 'click')
     assert(invalid(question), 'Invalid registration left a listener behind')
+  })
+
+  test('test requires explicit true and receives the event context', ({ question, buttons, cleanupOrder }) => {
+    let result = false
+    let context
+    question.clearErrorsOn(buttons[0], 'click', {
+      test: (value) => { context = value; return result },
+      onClear: () => cleanupOrder.push('custom'),
+    })
+    question.validate()
+    for (const value of [false, undefined, null, 1, 'true', Promise.resolve(true)]) {
+      result = value
+      fire(buttons[0], 'click')
+      assert(invalid(question) && cleanupOrder.length === 0, 'Non-true result cleared errors')
+    }
+    result = true
+    fire(buttons[0].firstElementChild, 'click')
+    assert(context.target === buttons[0], 'Missing registered target')
+    assert(context.event.target === buttons[0].firstElementChild, 'Missing event target')
+    assert(context.input === question.input && context.question === question.question && context.label === question.label, 'Missing question context')
+    assert(!invalid(question) && cleanupOrder.join(',') === 'message,generic,custom', 'Expected cleanup after successful test')
+  })
+
+  test('custom cleanup runs once on every clearing path', ({ question, buttons, cleanupOrder }) => {
+    question.clearErrorsOn(buttons[0], 'click', {
+      test: () => false,
+      onClear: () => cleanupOrder.push('custom'),
+    })
+    question.clearErrorsOn(question.input)
+    for (const clear of [
+      () => question.clearErrors(),
+      () => fire(question.input, 'input'),
+      () => fire(question.input, 'change'),
+      () => question.validate(),
+    ]) {
+      question.validate()
+      cleanupOrder.length = 0
+      clear()
+      assert(cleanupOrder.join(',') === 'message,generic,custom', 'Cleanup did not run in order')
+      question.clearErrors()
+      const count = cleanupOrder.length
+      question.clearErrors()
+      assert(cleanupOrder.length === count, 'Cleanup repeated without errors')
+    }
+  })
+
+  test('cleanup synchronizes attributes even when another trigger clears', ({ question, buttons }) => {
+    const custom = buttons[0]
+    question.clearErrorsOn(custom, 'click', {
+      test: () => false,
+      onClear: () => {
+        custom.removeAttribute('aria-invalid')
+        custom.removeAttribute('data-invalid')
+      },
+    })
+    question.clearErrorsOn(buttons[1], 'click')
+    question.validate()
+    custom.setAttribute('aria-invalid', 'true')
+    custom.setAttribute('data-invalid', '')
+    fire(custom, 'click')
+    assert(invalid(question) && custom.hasAttribute('data-invalid'), 'Failed test changed errors')
+    fire(buttons[1], 'click')
+    assert(!custom.hasAttribute('data-invalid') && !custom.hasAttribute('aria-invalid'), 'Attributes remained after another trigger cleared')
+  })
+
+  test('unsubscribe removes only its cleanup, even with a shared callback', ({ question, buttons }) => {
+    let cleanups = 0
+    const onClear = () => cleanups++
+    const unsubscribe = question.clearErrorsOn(buttons[0], 'click', { onClear })
+    question.clearErrorsOn(buttons[0], 'click', { onClear })
+    question.validate()
+    unsubscribe()
+    unsubscribe()
+    assert(cleanups === 0, 'Unsubscribe invoked cleanup')
+    fire(buttons[0], 'click')
+    assert(cleanups === 1, 'Other registration cleanup was removed or duplicated')
+    question.validate()
+    question.clearErrors()
+    assert(cleanups === 2, 'Cleanup did not persist for the next cycle')
+  })
+
+  test('original input respects its predicate and callbacks stay idle without errors', ({ question }) => {
+    let tests = 0
+    let cleanups = 0
+    let allowClear = false
+    question.clearErrorsOn(question.input, 'change', {
+      test: () => { tests++; return allowClear },
+      onClear: () => cleanups++,
+    })
+    fire(question.input, 'change')
+    question.clearErrors()
+    assert(tests === 0 && cleanups === 0, 'Callbacks ran without errors')
+    question.validate()
+    fire(question.input, 'change')
+    assert(invalid(question) && tests === 1 && cleanups === 0, 'Failed predicate did not preserve errors')
+    allowClear = true
+    fire(question.input, 'change')
+    assert(!invalid(question) && tests === 2 && cleanups === 1, 'Passing predicate did not clear errors')
+  })
+
+  test('invalid callbacks fail before registering listeners or cleanup', ({ question, buttons }) => {
+    let cleanups = 0
+    for (const options of [
+      { test: false, onClear: () => cleanups++ },
+      { test: () => true, onClear: 'invalid' },
+    ]) {
+      let threw = false
+      try { question.clearErrorsOn(buttons[0], 'click', options) } catch (error) {
+        threw = error instanceof TypeError
+      }
+      assert(threw, 'Expected TypeError')
+    }
+    question.validate()
+    fire(buttons[0], 'click')
+    assert(invalid(question), 'Invalid registration left a listener')
+    question.clearErrors()
+    assert(cleanups === 0, 'Invalid registration left cleanup')
   })
 
   results.textContent = `${lines.join('\n')}\n${lines.length - failures}/${lines.length} passed`
