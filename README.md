@@ -120,9 +120,25 @@ Each question exposes `question` (the question container), `label`, `input`, `.s
 - `.addValidator(fn, onClear = null)` registers a synchronous validator receiving `{ input }`. Return `true` to pass, an error message string to fail, or `[message, optionalCleanupFn]` to attach cleanup to that error. Return `true` explicitly for valid values.
 - `.validate()` clears the previous validation result, runs the question's validators, and returns a boolean. Errors appear as comma-separated text in `[data-control="error"]`; the question receives `data-invalid` and the input receives `aria-invalid="true"`.
 - `.clearErrors()` clears the displayed errors and invalid attributes and runs cleanup. Errors also clear on the next `input` or `change` event; clearing does not rerun validation.
-- `.clearErrorsOn(target, events = ['input', 'change'])` registers additional elements that clear this question's errors. Pass an element or an iterable collection of elements (such as an array or `NodeList`), plus one event name or an iterable collection of event names. Resolve selectors to elements first. Empty collections, invalid elements, and empty or whitespace-containing event names throw `TypeError`. The method returns an unsubscribe function for that registration.
+- `.clearErrorsOn(target, events = ['input', 'change'], { test = null, onClear = null } = {})` registers additional elements that clear this question's errors. Pass an element or an iterable collection of elements (such as an array or `NodeList`), plus one event name or an iterable collection of event names. Resolve selectors to elements first. Empty collections, invalid elements, and empty or whitespace-containing event names throw `TypeError`. The optional `test` and `onClear` options must be functions or `null`. The method returns an unsubscribe function for that registration.
 
 Custom clear triggers stay registered across validation attempts and use the same cleanup behavior as `.clearErrors()`. They supplement the original input's automatic `input` and `change` triggers. Unsubscribing removes only that registration and does not clear existing errors.
+
+Use `test` to conditionally clear errors and `onClear` to reset a custom element's error styling:
+
+```js
+question.clearErrorsOn(customInput, 'change', {
+  test: () => customInput.value.trim() !== '',
+  onClear: () => {
+    customInput.removeAttribute('aria-invalid')
+    customInput.removeAttribute('data-invalid')
+  },
+})
+```
+
+`test({ event, target, input, question, label })` runs synchronously when a registered event fires while the question has errors. Only an explicit `true` clears them; other return values (including promises) leave them in place. `target` is the registered element (`event.currentTarget`), while `event.target` may be a descendant. Omitting `test` keeps unconditional clearing. The test gates only that registration; other triggers, including the original input's default events, still clear independently.
+
+`onClear()` runs once per error cycle whenever the question's errors clear, including through another trigger, a direct `.clearErrors()` call, or revalidation. It receives no arguments and runs after message-specific cleanups and validator-level `onClear` callbacks. All active registrations' cleanup callbacks run, even if their tests did not pass. Calling `.clearErrors()` without new errors does not rerun cleanup. Unsubscribing removes both the event listeners and that registration's cleanup callback without invoking it; other registrations are preserved.
 
 ```js
 formControl('#your-form-id')
