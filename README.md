@@ -117,72 +117,128 @@ Each question exposes `question` (the question container), `label`, `input`, `.s
 
 #### Question validation
 
-- `.addValidator(fn, onClear = null)` registers a synchronous validator receiving `{ input }`. Return `true` to pass, an error message string to fail, or `[message, optionalCleanupFn]` to attach cleanup to that error. Return `true` explicitly for valid values.
-- `.validate()` clears the previous validation result, runs the question's validators, and returns a boolean. Errors appear as comma-separated text in `[data-control="error"]`; the question receives `data-invalid` and the input receives `aria-invalid="true"`.
-- `.clearErrors()` clears the displayed errors and invalid attributes and runs cleanup. Input and change events do not clear errors unless explicitly registered with `.clearErrorsOn()`. Clearing does not rerun validation; `.validate()` still clears the previous result before checking validators again.
-- `.clearErrorsOn(target, events = ['input', 'change'], { test = null, onClear = null } = {})` registers additional elements that clear this question's errors. Pass an element or an iterable collection of elements (such as an array or `NodeList`), plus one event name or an iterable collection of event names. Resolve selectors to elements first. Empty collections, invalid elements, and empty or whitespace-containing event names throw `TypeError`. The optional `test` and `onClear` options must be functions or `null`. The method returns an unsubscribe function for that registration.
+`.addValidator(fn, options = {})` registers a synchronous validator. Return `true` to pass, an error message string to fail, or `[message, cleanup]` to attach cleanup to that particular failed result. Validators receive `{ input, question, label, event, target }`. On manual or submission validation, `event` and `target` are `null`; on event validation, `target` is the registered element (`event.currentTarget`), while `event.target` may be a descendant.
 
-Custom clear triggers stay registered across validation attempts and use the same cleanup behavior as `.clearErrors()`. All event-based clearing is opt-in, including events on the original input. To clear when the original input changes, register `question.clearErrorsOn(question.input)` explicitly. Unsubscribing removes only that registration and does not clear existing errors.
-
-Use `test` to conditionally clear errors and `onClear` to reset a custom element's error styling:
-
-```js
-question.clearErrorsOn(customInput, 'change', {
-  test: () => customInput.value.trim() !== '',
-  onClear: () => {
-    customInput.removeAttribute('aria-invalid')
-    customInput.removeAttribute('data-invalid')
-  },
-})
-```
-
-`test({ event, target, input, question, label })` runs synchronously when a registered event fires while the question has errors. Only an explicit `true` clears them; other return values (including promises) leave them in place. `target` is the registered element (`event.currentTarget`), while `event.target` may be a descendant. Omitting `test` keeps unconditional clearing. The test gates only that registration; other explicitly registered triggers still clear independently.
-
-`onClear()` runs once per error cycle whenever the question's errors clear, including through another trigger, a direct `.clearErrors()` call, or revalidation. It receives no arguments and runs after message-specific cleanups and validator-level `onClear` callbacks. All active registrations' cleanup callbacks run, even if their tests did not pass. Calling `.clearErrors()` without new errors does not rerun cleanup. Unsubscribing removes both the event listeners and that registration's cleanup callback without invoking it; other registrations are preserved.
-
-```js
-formControl('#your-form-id')
-  .question('Reasons', ({ question }) => {
-    const customInput = document.querySelector('#custom-reason')
-    const dismissButton = document.querySelector('#dismiss-reason-errors')
-
-    if (customInput) question.clearErrorsOn(customInput)
-    if (dismissButton) {
-      const unsubscribe = question.clearErrorsOn(dismissButton, 'click')
-      // Call unsubscribe() when this custom control is removed.
-    }
-  })
-```
-
-For multiple elements or events, use `question.clearErrorsOn(elements, ['input', 'change'])`. Events bubbling from descendants also clear errors when registered on a container. Clearing only dismisses the current validation result; the next validation attempt checks the value again.
-
-When clearing depends on an operation succeeding, call `.clearErrors()` after that operation instead of registering a click trigger. For example, `reasons.addItem(item)` followed by `question.clearErrors()` preserves errors if adding the item throws.
-
-The cleanup returned with a message runs once when that validation result clears, including when `.validate()` replaces it. It is then discarded. The generic `onClear` passed to `.addValidator()` stays registered for future validation cycles. When a question's errors clear, all its registered generic `onClear` callbacks run, even for validators that passed, after the message-specific cleanups. Calling `.clearErrors()` again without new errors does not rerun these callbacks. Cleanup callbacks receive no arguments.
+Use one call to configure validation, event-based clearing, and result callbacks:
 
 ```js
 formControl('#your-form-id')
   .question('Reason', ({ question }) => {
+    const customInput = document.querySelector('#custom-reason')
+    if (!customInput) return
+
     question.addValidator(
-      ({ input }) => {
-        if (input.value.trim()) return true;
-
-        const previousBackground = input.style.backgroundColor;
-        input.style.backgroundColor = '#fff0f0';
-
-        return ['Reason is required', () => {
-          input.style.backgroundColor = previousBackground;
-        }];
+      () => customInput.value.trim() !== '' ? true : 'Enter a reason',
+      {
+        validateWhen: [
+          {
+            targets: [customInput],
+            events: ['blur'],
+            // Optional; omit when every blur should validate.
+            when: () => !customInput.disabled,
+          },
+        ],
+        clearErrorsWhen: [
+          {
+            targets: [customInput],
+            // events defaults to ['input', 'change']
+            when: () => customInput.value.trim() !== '',
+            onClear: () => {
+              customInput.removeAttribute('aria-invalid')
+              customInput.removeAttribute('data-invalid')
+            },
+          },
+        ],
+        onValid: () => {
+          customInput.removeAttribute('aria-invalid')
+        },
+        onInvalid: ({ messages }) => {
+          customInput.setAttribute('aria-invalid', 'true')
+          customInput.setAttribute('data-invalid', messages.join(', '))
+        },
       },
-      () => {
-        // Runs whenever this question's errors clear; stays registered.
-        console.log('Reason errors cleared');
-      },
-    );
-  });
+    )
+  })
 ```
 
-Validation runs automatically when the form's `button.default` is clicked. The click is blocked if a question fails; questions are checked in order until the first failure. The optional form-level `onSubmit()` callback runs after that validation attempt, including when validation fails, and can also block the click by returning `false`. For other submission paths, call the questions' `.validate()` methods explicitly.
+Both `validateWhen` and `clearErrorsWhen` are arrays and default to `[]`. Registrations persist across validation and clearing cycles. All event-based validation and clearing is opt-in; no listeners are implicitly attached to the question's original input.
+
+| Option | Behavior |
+| --- | --- |
+| `validateWhen[].targets` | An element or nonempty iterable collection of elements, such as an array or `NodeList`. Resolve selectors to elements first. Each event validates only this validator, even before the first submission. |
+| `validateWhen[].events` | Required event name or nonempty iterable collection of event names, such as `['blur']`. There is no default validation event. |
+| `clearErrorsWhen[].targets` | Elements whose events may clear only this validator's errors. May be omitted to register an `onClear` callback without listeners. |
+| `clearErrorsWhen[].events` | Event name or nonempty iterable collection of event names; defaults to `['input', 'change']`. |
+| `when(context)` | Optional synchronous predicate on either trigger type, receiving the same context as the validator. Only an explicit `true` permits that event's action. Other values, including promises, do not. Omitting it makes the trigger unconditional. It does not gate manual or submission validation, or cleanup when errors clear through another path. |
+| `clearErrorsWhen[].onClear()` | Optional cleanup for this validator's errors. Receives no arguments. All its registered cleanup callbacks run once per failed result when those errors clear, regardless of which trigger cleared them or whether that trigger's `when` passed. |
+| `onValid(result)` / `onInvalid(result)` | Optional callbacks at the validator-options level. Exactly one runs after each completed validation attempt, including event, manual, and submission validation. They run on every attempt, not just validity transitions. Receive the validator context plus `{ valid, messages }`. Messages are a copy for this validator only. Clearing alone invokes neither callback. |
+
+To clear this validator's errors when the original input changes:
+
+```js
+question.addValidator(validate, {
+  clearErrorsWhen: [
+    { targets: [question.input] },
+  ],
+})
+```
+
+When the same target and event are configured for both validation and clearing, an allowed validation trigger takes precedence. This prevents a clearing trigger from hiding the error just produced by validation. Duplicate validation triggers on the same target and event result in one validation attempt. As with regular DOM events, events can bubble to registered ancestor elements; `blur` itself does not bubble, so register the input directly or use `focusout` on a container.
+
+Invalid validator functions, option types, callback types, elements, and empty or whitespace-containing event names throw `TypeError`. Each trigger must be an object, and both trigger collections must be arrays. A missing `validateWhen` target or event is invalid. Options are checked before adding the validator or its listeners.
+
+#### Error state and cleanup
+
+Errors are stored per validator and displayed together, in validator registration order, as comma-separated text in `[data-control="error"]`. The question has `data-invalid`, and its original input has `aria-invalid="true"`, for as long as any validator has an error. Clearing one rule does not hide errors from another rule or another question.
+
+The control refreshes its error text and invalid attributes after callbacks too, so a callback touching the original input cannot hide another validator's error. Custom controls can manage their own attributes independently.
+
+- `.validate()` clears the previous results for this question, runs all its validators, and returns whether all passed. Revalidating through `validateWhen` replaces only that validator's result.
+- `.clearErrors()` clears all validators' errors on this question and runs their cleanup without revalidating.
+- Before replacing a failed result, its message-specific cleanup runs, followed by its persistent cleanup callbacks. The validator then runs and its `onValid` or `onInvalid` callback runs after the updated errors are rendered.
+- Each `clearErrorsWhen[].onClear` remains registered for future cycles, but runs only when its own validator had an error to clear. A passing validator's cleanup does not run because another validator failed or cleared. Calling `.clearErrors()` again without new errors does not rerun cleanup.
+
+The existing `.addValidator(fn, onClear)` signature remains supported, including `null` as the second argument. Its persistent `onClear` now follows the same per-validator lifecycle: it runs after the message-specific cleanup only when that validator's own errors clear. Previously, it also ran for passing validators whenever the question's errors cleared. Migrate new code to `clearErrorsWhen: [{ onClear }]` to keep clearing configuration together.
+
+```js
+question.addValidator(
+  ({ input }) => {
+    if (input.value.trim()) return true
+
+    const previousBackground = input.style.backgroundColor
+    input.style.backgroundColor = '#fff0f0'
+    return ['Reason is required', () => {
+      input.style.backgroundColor = previousBackground
+    }]
+  },
+  () => {
+    // Existing callback signature; runs when this validator's errors clear.
+    console.log('Reason errors cleared')
+  },
+)
+```
+
+#### Existing question-wide clear triggers
+
+`.clearErrorsOn(target, events = ['input', 'change'], { test = null, onClear = null } = {})` remains supported for explicitly clearing the entire question. It accepts an element or nonempty collection of elements, plus an event name or nonempty collection of event names, and returns an unsubscribe function. `test(context)` is synchronous, receives the event context described above, and must return exactly `true` to allow clearing. Omitting it makes the trigger unconditional.
+
+```js
+const unsubscribe = question.clearErrorsOn(dismissButton, 'click', {
+  test: () => !dismissButton.disabled,
+  onClear: () => console.log('All question errors cleared'),
+})
+
+// Removes this registration's listeners and cleanup without clearing errors.
+// unsubscribe()
+```
+
+Its `onClear()` callback is question-wide: it runs after validator cleanup when the last remaining question error clears, including through manual clearing, a registered trigger, or revalidation. It does not run when one rule clears while another still has errors, or when there were no errors. Unsubscribing affects only that registration. Prefer `clearErrorsWhen` when a trigger should clear just its owning validator.
+
+When clearing depends on an operation succeeding, call `.clearErrors()` after that operation instead of registering a click trigger. For example, `reasons.addItem(item)` followed by `question.clearErrors()` preserves errors if adding the item throws.
+
+#### Submission behavior
+
+Validation still runs automatically when the form's `button.default` is clicked. All validators on each question run, but questions are checked in order only until the first failing question. The click is blocked on failure. Event-trigger conditions do not prevent submission validation. The optional form-level `onSubmit()` callback runs after that validation attempt, including when validation fails, and can also block the click by returning `false`. For other submission paths, call the questions' `.validate()` methods explicitly.
 
 ### `datepicker(inputSelector, options)`
 
