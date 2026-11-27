@@ -401,7 +401,26 @@ reasons.addItem({
 
 Labels support trusted HTML and default to `'edit'` and `'delete'`. `classList` is an optional array of CSS class names. Provide an edit click handler; editing is application-defined. A custom delete handler replaces automatic deletion, so call `removeItem(index)` yourself if needed. Default deletion resolves the row's current index at click time.
 
-`addItem`, `removeItem`, `removeLastItem`, `removeLastNewItem`, and `removeNewItems` synchronize the original input's value using the configured serializer. `editAction` and `deleteAction` are omitted from saved JSON without removing them from the in-memory items. They must be supplied again when reconstructing actions on a later form visit. These methods do not dispatch `input` or `change` events.
+`addItem`, `removeItem`, `removeLastItem`, `removeLastNewItem`, and `removeNewItems` synchronize the original input's value using the configured serializer. `editAction` and `deleteAction` are omitted from saved JSON without removing them from the in-memory items. They must be supplied again when reconstructing actions on a later form visit.
+
+When the stored value changes, these methods dispatch one bubbling `input` event on the original input after updating the items, rows, and visibility. They do not dispatch `change`, so hooks listening for both events run once. `removeNewItems()` saves and emits once after the entire batch is removed. Initialization, no-op removals, writes that leave the input value unchanged, failed serialization, and rendering-only `addRow`/`removeRow` calls do not emit events.
+
+Register validation or clearing hooks on the original input to respond to repeater changes; no manual dispatch is needed:
+
+```js
+question.addValidator(
+  ({ input }) => JSON.parse(input.value || '[]').length > 0
+    ? true
+    : 'Add at least one reason',
+  {
+    validateWhen: [
+      { targets: [question.input], events: ['input'] },
+    ],
+  },
+)
+```
+
+This example uses the default JSON storage format. For custom storage, use the corresponding parser in the validator. The repeater does not turn validation on automatically; it emits the event so explicitly configured hooks and other listeners can respond.
 
 At `maxNewItems`, the action bar hides and further `addItem` calls throw `RangeError`. Removing an item added during this initialization frees a slot; removing an existing item does not. The bar reappears only if its visibility preference allows it.
 
@@ -492,5 +511,7 @@ The host page must allow scripts from `cdn.jsdelivr.net`. The code highlighter a
 ## Local development
 
 To run the validation trigger regression checks, serve the repository through a local HTTP server (for example, `python3 -m http.server 8000`) and open `http://localhost:8000/tests/form.test.html`. The page reports each result without requiring dependencies or a build step.
+
+Open `http://localhost:8000/tests/repeater.test.html` to run the repeater event and validation integration checks.
 
 Serve the repository through a local HTTP server and open `test-page.html`. That page imports `./src/forms/index.js` and demonstrates editable and read-only forms. Keep the `forms` and `helpers` folder structure intact when hosting the source so relative imports continue to resolve.
