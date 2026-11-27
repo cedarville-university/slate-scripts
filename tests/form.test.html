@@ -92,8 +92,20 @@
     }
   })
 
-  test('default events supplement original input events', ({ question, buttons }) => {
+  test('unregistered input and change events preserve errors and cleanup', ({ question, cleanupOrder }) => {
+    question.validate()
+    for (const event of ['input', 'change']) {
+      fire(question.input, event)
+      assert(invalid(question), `${event} implicitly cleared errors`)
+      assert(question.input.getAttribute('aria-invalid') === 'true', 'Invalid attribute was cleared')
+      assert(question.question.querySelector('[data-control="error"]').textContent === 'Required', 'Error message was cleared')
+      assert(cleanupOrder.length === 0, 'Unregistered event ran cleanup')
+    }
+  })
+
+  test('default event names work on explicitly registered elements', ({ question, buttons }) => {
     question.clearErrorsOn(buttons[0])
+    question.clearErrorsOn(question.input)
     for (const element of [buttons[0], question.input]) {
       for (const event of ['input', 'change']) {
         question.validate()
@@ -124,18 +136,18 @@
     fire(buttons[0], 'click')
     assert(invalid(question), 'Unsubscribed listener still active')
     fire(question.input, 'change')
-    assert(!invalid(question), 'Unsubscribe removed default listener')
+    assert(invalid(question), 'Unregistered input cleared errors')
   })
 
-  test('custom registration on original input cannot remove its defaults', ({ question }) => {
+  test('unsubscribing original input disables its clearing across validation cycles', ({ question }) => {
     const unsubscribe = question.clearErrorsOn(question.input)
     question.validate()
     unsubscribe()
     fire(question.input, 'input')
-    assert(!invalid(question), 'Default input listener removed')
+    assert(invalid(question), 'Unsubscribed input listener still cleared errors')
     question.validate()
     fire(question.input, 'change')
-    assert(!invalid(question), 'Default change listener removed')
+    assert(invalid(question), 'Revalidation restored implicit clearing')
   })
 
   test('invalid arguments fail before binding any listeners', ({ question, buttons }) => {
@@ -187,6 +199,7 @@
       test: () => false,
       onClear: () => cleanupOrder.push('custom'),
     })
+    question.clearErrorsOn(question.input)
     for (const clear of [
       () => question.clearErrors(),
       () => fire(question.input, 'input'),
@@ -239,11 +252,12 @@
     assert(cleanups === 2, 'Cleanup did not persist for the next cycle')
   })
 
-  test('callbacks stay idle without errors and defaults remain independent', ({ question }) => {
+  test('original input respects its predicate and callbacks stay idle without errors', ({ question }) => {
     let tests = 0
     let cleanups = 0
+    let allowClear = false
     question.clearErrorsOn(question.input, 'change', {
-      test: () => { tests++; return false },
+      test: () => { tests++; return allowClear },
       onClear: () => cleanups++,
     })
     fire(question.input, 'change')
@@ -251,7 +265,10 @@
     assert(tests === 0 && cleanups === 0, 'Callbacks ran without errors')
     question.validate()
     fire(question.input, 'change')
-    assert(!invalid(question) && cleanups === 1, 'Predicate blocked original input default')
+    assert(invalid(question) && tests === 1 && cleanups === 0, 'Failed predicate did not preserve errors')
+    allowClear = true
+    fire(question.input, 'change')
+    assert(!invalid(question) && tests === 2 && cleanups === 1, 'Passing predicate did not clear errors')
   })
 
   test('invalid callbacks fail before registering listeners or cleanup', ({ question, buttons }) => {

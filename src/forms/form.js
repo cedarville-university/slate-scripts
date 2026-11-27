@@ -70,8 +70,6 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
         }
 
         const clearErrors = () => {
-          input.removeEventListener('input', clearErrors)
-          input.removeEventListener('change', clearErrors)
           const hadErrors = question.hasAttribute('data-invalid')
           question.removeAttribute('data-invalid')
           input.removeAttribute('aria-invalid')
@@ -122,7 +120,7 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
           }
 
           // Give each registration its own listener so unsubscribing it does not
-          // remove another registration or the original input's default listeners.
+          // remove another registration.
           const cleanup = () => onClear?.()
           const handler = (event) => {
             if (!question.hasAttribute('data-invalid')) return
@@ -183,8 +181,6 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
               const isValid = messages.length === 0
 
               if (!isValid) {
-                on('input', clearErrors, { once: true })
-                on('change', clearErrors, { once: true })
                 showErrors(messages)
 
                 return false
