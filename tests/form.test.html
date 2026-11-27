@@ -1,6 +1,6 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>formControl clearErrorsOn tests</title>
+<title>formControl validation tests</title>
 <pre id="results">Running…</pre>
 <script type="module">
   import { formControl } from '../src/forms/form.js'
@@ -14,7 +14,7 @@
   const fire = (element, event) => element.dispatchEvent(new Event(event, { bubbles: true }))
   const invalid = (question) => question.question.hasAttribute('data-invalid')
 
-  const test = (name, run) => {
+  const test = (name, run, defaultValidators = true) => {
     const form = document.createElement('form')
     form.action = `${location.origin}/?cmd=form_edit`
     form.innerHTML = `
@@ -24,6 +24,7 @@
         <button type="button"><span>Dismiss</span></button>
         <button type="button">Another</button>
       </div>
+      <button type="button" class="default">Save</button>
     `
     document.body.append(form)
     try {
@@ -32,15 +33,17 @@
       const other = control._questions.get('Other')
       const cleanupOrder = []
       let validations = 0
-      question.addValidator(() => {
-        validations++
-        return ['Required', () => cleanupOrder.push('message')]
-      }, () => cleanupOrder.push('generic'))
-      other.addValidator(() => 'Other is required')
+      if (defaultValidators) {
+        question.addValidator(() => {
+          validations++
+          return ['Required', () => cleanupOrder.push('message')]
+        }, () => cleanupOrder.push('generic'))
+        other.addValidator(() => 'Other is required')
+      }
       run({
         form, question, other, cleanupOrder,
         validations: () => validations,
-        buttons: form.querySelectorAll('button'),
+        buttons: form.querySelectorAll('.actions button'),
       })
       lines.push(`PASS ${name}`)
     } catch (error) {
@@ -288,6 +291,229 @@
     assert(invalid(question), 'Invalid registration left a listener')
     question.clearErrors()
     assert(cleanups === 0, 'Invalid registration left cleanup')
+  })
+
+  const lifecycleTest = (name, run) => test(name, run, false)
+  const message = (question) => question.question.querySelector('[data-control="error"]').textContent
+
+  lifecycleTest('blur validates only its owner, including before submission', ({ question, other }) => {
+    let ownerCalls = 0
+    let siblingCalls = 0
+    let otherCalls = 0
+    question.addValidator(() => { ownerCalls++; return 'Required' }, {
+      validateWhen: [{ targets: [question.input], events: ['blur'] }],
+    })
+    question.addValidator(() => { siblingCalls++; return 'Sibling' })
+    other.addValidator(() => { otherCalls++; return 'Other' })
+    fire(question.input, 'input')
+    assert(ownerCalls === 0, 'Unregistered event validated')
+    fire(question.input, 'blur')
+    assert(ownerCalls === 1 && siblingCalls === 0 && otherCalls === 0, 'Blur validated unrelated rules')
+    assert(message(question) === 'Required' && invalid(question), 'Blur did not display the error')
+  })
+
+  lifecycleTest('submit still runs every rule on a question and stops at first failing question', ({ form, question, other }) => {
+    const calls = []
+    let pass = false
+    question.addValidator(() => { calls.push('first'); return pass || 'First' }, {
+      validateWhen: [{ targets: [question.input], events: ['blur'], when: () => false }],
+    })
+    question.addValidator(() => { calls.push('second'); return true })
+    other.addValidator(() => { calls.push('other'); return true })
+    const click = () => form.querySelector('button.default').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    assert(click() === false, 'Invalid submission was not blocked')
+    assert(calls.join(',') === 'first,second', 'Submission ordering changed')
+    calls.length = 0
+    pass = true
+    assert(click() === true, 'Valid submission was blocked')
+    assert(calls.join(',') === 'first,second,other', 'Submission skipped a valid question')
+  })
+
+  lifecycleTest('clearing one validator preserves sibling errors and invalid attributes', ({ question, buttons }) => {
+    const cleanups = []
+    question.addValidator(() => 'First', {
+      clearErrorsWhen: [{ targets: [buttons[0]], onClear: () => {
+        cleanups.push('first')
+        question.input.removeAttribute('aria-invalid')
+      } }],
+    })
+    question.addValidator(() => 'Second', {
+      clearErrorsWhen: [{ targets: [buttons[1]], onClear: () => cleanups.push('second') }],
+    })
+    assert(question.validate() === false && message(question) === 'First, Second', 'Errors were not aggregated')
+    fire(buttons[0], 'input')
+    assert(message(question) === 'Second' && invalid(question), 'Sibling error was hidden')
+    assert(question.input.getAttribute('aria-invalid') === 'true', 'Input invalid state was removed')
+    assert(cleanups.join(',') === 'first', 'Sibling cleanup ran')
+    fire(buttons[1], 'change')
+    assert(!invalid(question) && !question.input.hasAttribute('aria-invalid'), 'Final error did not clear')
+    assert(cleanups.join(',') === 'first,second', 'Cleanup order differed')
+  })
+
+  lifecycleTest('revalidation clears only the owner and refreshes messages in registration order', ({ question }) => {
+    let value = 'First'
+    let secondCalls = 0
+    const order = []
+    question.addValidator(() => { order.push('validate'); return value }, {
+      validateWhen: [{ targets: [question.input], events: ['blur'] }],
+      clearErrorsWhen: [{ onClear: () => order.push('clear') }],
+      onValid: () => question.input.removeAttribute('aria-invalid'),
+    })
+    question.addValidator(() => { secondCalls++; return 'Second' })
+    question.validate()
+    order.length = 0
+    value = 'Updated'
+    fire(question.input, 'blur')
+    assert(order.join(',') === 'clear,validate', 'Old result was not cleaned before validating')
+    assert(message(question) === 'Updated, Second' && secondCalls === 1, 'Sibling was rerun or messages were reordered')
+    value = true
+    fire(question.input, 'blur')
+    assert(message(question) === 'Second' && invalid(question), 'Valid owner cleared sibling error')
+    assert(question.input.getAttribute('aria-invalid') === 'true', 'Valid callback hid sibling invalid state')
+  })
+
+  lifecycleTest('when predicates gate only event triggers and require explicit true', ({ question, buttons }) => {
+    let allow = false
+    let calls = 0
+    let details
+    question.addValidator(() => { calls++; return 'Required' }, {
+      validateWhen: [{ targets: [buttons[0]], events: ['click'], when: (ctx) => { details = ctx; return allow } }],
+      clearErrorsWhen: [{ targets: [buttons[1]], events: ['click'], when: () => allow }],
+    })
+    for (const value of [false, null, undefined, 1, 'true', Promise.resolve(true)]) {
+      allow = value
+      fire(buttons[0], 'click')
+      assert(calls === 0, 'Non-true predicate triggered validation')
+    }
+    allow = true
+    fire(buttons[0].firstElementChild, 'click')
+    assert(calls === 1 && invalid(question), 'True predicate did not validate')
+    assert(details.target === buttons[0] && details.event.target === buttons[0].firstElementChild && details.input === question.input, 'Incorrect trigger context')
+    allow = false
+    fire(buttons[1], 'click')
+    assert(invalid(question), 'False clearing predicate cleared errors')
+    question.validate()
+    assert(calls === 2, 'Event predicate blocked manual validation')
+    allow = true
+    fire(buttons[1], 'click')
+    assert(!invalid(question) && calls === 2, 'Clearing ran validation')
+  })
+
+  lifecycleTest('result callbacks fire on each attempt with isolated result messages', ({ form, question }) => {
+    const results = []
+    let result = 'Required'
+    question.addValidator(() => result, {
+      validateWhen: [{ targets: [question.input], events: ['blur'] }],
+      onInvalid: (details) => { results.push(details); details.messages.push('mutated') },
+      onValid: (details) => results.push(details),
+    })
+    fire(question.input, 'blur')
+    fire(question.input, 'blur')
+    assert(results.length === 2 && !results[0].valid && !results[1].valid, 'Invalid callback did not run for each attempt')
+    assert(message(question) === 'Required', 'Callback mutated stored messages')
+    result = true
+    question.validate()
+    form.querySelector('button.default').click()
+    assert(results.length === 4 && results[2].valid && results[3].valid, 'Valid callback skipped manual or submit validation')
+    assert(results[2].messages.length === 0 && results[2].event === null && results[2].target === null, 'Incorrect manual result context')
+  })
+
+  lifecycleTest('each cleanup runs once per owner error cycle on manual clear and replacement', ({ question }) => {
+    const order = []
+    let passingCleanup = 0
+    question.addValidator(() => ['Required', () => order.push('message')], {
+      clearErrorsWhen: [
+        { onClear: () => order.push('first') },
+        { onClear: () => order.push('second') },
+      ],
+    })
+    question.addValidator(() => true, { clearErrorsWhen: [{ onClear: () => passingCleanup++ }] })
+    question.clearErrors()
+    assert(!order.length, 'Cleanup ran before errors existed')
+    question.validate()
+    question.validate()
+    assert(order.join(',') === 'message,first,second', 'Replacement cleanup differed')
+    question.clearErrors()
+    question.clearErrors()
+    assert(order.join(',') === 'message,first,second,message,first,second', 'Cleanup repeated without new errors')
+    assert(passingCleanup === 0, 'Passing validator cleanup ran for another validator')
+  })
+
+  lifecycleTest('cleanup-only configurations and multiple targets and event overrides work', ({ question, buttons }) => {
+    let cleanups = 0
+    question.addValidator(() => 'Required', {
+      clearErrorsWhen: [
+        { targets: buttons, events: ['click'] },
+        { onClear: () => cleanups++ },
+      ],
+    })
+    question.validate()
+    fire(buttons[0], 'input')
+    assert(invalid(question), 'Overridden event was still registered')
+    for (const button of buttons) {
+      question.validate()
+      fire(button, 'click')
+      assert(!invalid(question), 'Collection target failed')
+    }
+    assert(cleanups === 3, 'Cleanup-only configuration did not run')
+  })
+
+  lifecycleTest('validation wins when the same target and event also clear errors', ({ question }) => {
+    let calls = 0
+    question.addValidator(() => { calls++; return 'Required' }, {
+      validateWhen: [
+        { targets: [question.input], events: ['input'] },
+        { targets: [question.input], events: ['input'] },
+      ],
+      clearErrorsWhen: [{ targets: [question.input] }],
+    })
+    fire(question.input, 'input')
+    assert(calls === 1 && invalid(question), 'Validation was duplicated or its error was immediately hidden')
+    fire(question.input, 'change')
+    assert(calls === 1 && !invalid(question), 'Clearing-only event did not clear')
+  })
+
+  lifecycleTest('options are validated atomically before state or listeners are added', ({ question }) => {
+    let calls = 0
+    const validTrigger = { targets: [question.input], events: ['blur'] }
+    const invalidOptions = [
+      { validateWhen: [validTrigger, { targets: [question.input] }] },
+      { validateWhen: validTrigger },
+      { validateWhen: [null] },
+      { validateWhen: [{ targets: [], events: ['blur'] }] },
+      { validateWhen: [{ ...validTrigger, when: true }] },
+      { validateWhen: [{ ...validTrigger, events: ['blur change'] }] },
+      { validateWhen: [validTrigger], clearErrorsWhen: [{ targets: ['invalid'] }] },
+      { clearErrorsWhen: [{ onClear: false }] },
+      { onValid: 'invalid' },
+      { onInvalid: true },
+    ]
+    for (const options of invalidOptions) {
+      let threw = false
+      try { question.addValidator(() => { calls++; return 'Invalid' }, options) } catch (error) {
+        threw = error instanceof TypeError
+      }
+      assert(threw, 'Expected invalid options to throw TypeError')
+    }
+    fire(question.input, 'blur')
+    assert(question.validate() && calls === 0, 'Invalid options left a validator or listener behind')
+  })
+
+  lifecycleTest('legacy question-wide clearing still clears all rule errors and cleanup', ({ question }) => {
+    let legacyCleanup = 0
+    let ruleCleanup = 0
+    let wideCleanup = 0
+    question.addValidator(() => 'Legacy', () => legacyCleanup++)
+    question.addValidator(() => 'New', {
+      clearErrorsWhen: [{ targets: [question.input], onClear: () => ruleCleanup++ }],
+    })
+    const unsubscribe = question.clearErrorsOn(question.input, 'change', { onClear: () => wideCleanup++ })
+    question.validate()
+    fire(question.input, 'input')
+    assert(message(question) === 'Legacy' && ruleCleanup === 1 && wideCleanup === 0, 'Rule clear was not isolated')
+    fire(question.input, 'change')
+    assert(!invalid(question) && legacyCleanup === 1 && wideCleanup === 1, 'Legacy question-wide clear failed')
+    unsubscribe()
   })
 
   results.textContent = `${lines.join('\n')}\n${lines.length - failures}/${lines.length} passed`

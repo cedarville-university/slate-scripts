@@ -1,4 +1,5 @@
 import { isEditing } from '../helpers/forms.js'
+import { questionValidation } from './validation.js'
 
 export function formControl(formSelector, { onSubmit = null } = {}) {
   const id = crypto.randomUUID()
@@ -54,97 +55,7 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
           return () => input.removeEventListener(event, handler)
         }
 
-        const validators = []
-        const clearCallbacks = new Set()
-        let errorCleanups = []
-        const errorEl = document.createElement('span')
-        errorEl.dataset.control = 'error'
-        errorEl.style.display = 'none'
-        question.append(errorEl)
-
-        const showErrors = (messages) => {
-          question.setAttribute('data-invalid', '')
-          input.setAttribute('aria-invalid', 'true')
-          errorEl.textContent = messages.join(', ')
-          errorEl.style.display = ''
-        }
-
-        const clearErrors = () => {
-          const hadErrors = question.hasAttribute('data-invalid')
-          question.removeAttribute('data-invalid')
-          input.removeAttribute('aria-invalid')
-          errorEl.textContent = ''
-          errorEl.style.display = ''
-          const cleanups = errorCleanups
-          errorCleanups = []
-          cleanups.forEach((cleanup) => cleanup())
-          if (hadErrors) {
-            validators.forEach(([, cleanup]) => cleanup?.())
-            Array.from(clearCallbacks).forEach((cleanup) => cleanup())
-          }
-        }
-
-        const clearErrorsOn = (
-          target,
-          events = ['input', 'change'],
-          { test = null, onClear = null } = {},
-        ) => {
-          const targets =
-            target instanceof Element ? [target] : Array.from(target ?? [])
-          const eventNames =
-            typeof events === 'string' ? [events] : Array.from(events ?? [])
-
-          if (
-            !targets.length ||
-            targets.some((element) => !(element instanceof Element))
-          ) {
-            throw new TypeError(
-              'clearErrorsOn requires an element or a collection of elements',
-            )
-          }
-          if (
-            !eventNames.length ||
-            eventNames.some(
-              (event) => typeof event !== 'string' || !event.trim() || /\s/.test(event),
-            )
-          ) {
-            throw new TypeError(
-              'clearErrorsOn requires an event name or a collection of event names',
-            )
-          }
-          if (test !== null && typeof test !== 'function') {
-            throw new TypeError('clearErrorsOn test must be a function or null')
-          }
-          if (onClear !== null && typeof onClear !== 'function') {
-            throw new TypeError('clearErrorsOn onClear must be a function or null')
-          }
-
-          // Give each registration its own listener so unsubscribing it does not
-          // remove another registration.
-          const cleanup = () => onClear?.()
-          const handler = (event) => {
-            if (!question.hasAttribute('data-invalid')) return
-            if (
-              test !== null &&
-              test({ event, target: event.currentTarget, input, question, label }) !==
-                true
-            ) {
-              return
-            }
-            clearErrors()
-          }
-          clearCallbacks.add(cleanup)
-          targets.forEach((element) => {
-            eventNames.forEach((event) => element.addEventListener(event, handler))
-          })
-
-          return () => {
-            clearCallbacks.delete(cleanup)
-            targets.forEach((element) => {
-              eventNames.forEach((event) => element.removeEventListener(event, handler))
-            })
-          }
-        }
+        const validation = questionValidation({ question, label, input })
 
         return [
           label.textContent.trim(),
@@ -161,35 +72,7 @@ export function formControl(formSelector, { onSubmit = null } = {}) {
                 fn?.({ question, label, input, style })
               })
             },
-            addValidator: (fn, onClear = null) => {
-              validators.push([fn, onClear])
-            },
-            validate: () => {
-              clearErrors()
-
-              const messages = validators
-                .map(([v]) => v?.({ input }))
-                .filter((message) => message !== true)
-                .map((result) => {
-                  if (!Array.isArray(result)) return result
-
-                  const [message, cleanup] = result
-                  if (typeof cleanup === 'function') errorCleanups.push(cleanup)
-                  return message
-                })
-
-              const isValid = messages.length === 0
-
-              if (!isValid) {
-                showErrors(messages)
-
-                return false
-              }
-
-              return true
-            },
-            clearErrors,
-            clearErrorsOn,
+            ...validation,
           },
         ]
       }),
