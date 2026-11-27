@@ -217,7 +217,11 @@ function init(
     if (typeof value !== 'string') {
       throw new TypeError('storage.serialize must return a string')
     }
+    const previousValue = input.value
     input.value = value
+    if (input.value !== previousValue) {
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
   }
 
   function addItem(item) {
@@ -247,16 +251,19 @@ function init(
     return this
   }
 
-  function removeItem(index) {
+  function removeItemAt(index) {
     if (!Number.isInteger(index) || index < 0 || index >= items.length)
-      return this
+      return false
     items.splice(index, 1)
     const [wasNew] = newItemFlags.splice(index, 1)
     if (wasNew) newItemsCount--
-    updateVisibility()
-    saveItems()
-
     removeRow(index)
+    updateVisibility()
+    return true
+  }
+
+  function removeItem(index) {
+    if (removeItemAt(index)) saveItems()
     return this
   }
 
@@ -272,9 +279,14 @@ function init(
   }
 
   function removeNewItems() {
+    let removed = false
     for (let index = newItemFlags.length - 1; index >= 0; index--) {
-      if (newItemFlags[index]) removeItem(index)
+      if (newItemFlags[index]) {
+        removeItemAt(index)
+        removed = true
+      }
     }
+    if (removed) saveItems()
     return api
   }
 

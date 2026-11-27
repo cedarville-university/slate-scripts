@@ -1,0 +1,189 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Repeater input event tests</title>
+<pre id="results">Running…</pre>
+<script type="module">
+  import repeater from '../src/forms/repeater.js'
+  import { formControl } from '../src/forms/form.js'
+
+  const results = document.querySelector('#results')
+  const lines = []
+  let failures = 0
+  const assert = (condition, message) => {
+    if (!condition) throw new Error(message)
+  }
+  const test = (name, run) => {
+    const form = document.createElement('form')
+    form.action = `${location.origin}/?cmd=form_edit`
+    form.innerHTML = '<div class="form_question"><label>Reasons</label><textarea></textarea></div>'
+    document.body.append(form)
+    const input = form.querySelector('textarea')
+    input.value = '[]'
+    const events = []
+    let changes = 0
+    let api
+    // Listen on an ancestor to verify bubbling as well as the saved value and UI.
+    form.addEventListener('input', (event) => events.push({
+      target: event.target,
+      value: input.value,
+      items: api?.items.length,
+      rows: api?.rows.length,
+      renderedRows: form.querySelectorAll('tbody tr').length - 1,
+      actionDisplay: api?.action.style.display,
+    }))
+    form.addEventListener('change', () => changes++)
+    const init = (options = {}) => {
+      api = repeater(input, options)
+      return api
+    }
+    try {
+      run({ form, input, init, events, changes: () => changes })
+      lines.push(`PASS ${name}`)
+    } catch (error) {
+      failures++
+      lines.push(`FAIL ${name}: ${error.message}`)
+    } finally {
+      form.remove()
+    }
+  }
+
+  test('initialization preserves storage and emits no events', ({ input, init, events, changes }) => {
+    input.value = '[ { "Name": "Existing" } ]'
+    const original = input.value
+    const api = init()
+    assert(input.value === original && api.rows.length === 1, 'Initialization rewrote storage or skipped rows')
+    assert(events.length === 0 && changes() === 0, 'Initialization emitted an event')
+  })
+
+  test('add emits exactly one bubbling input after storage, rows, and limits update', ({ input, init, events, changes }) => {
+    const api = init({ maxNewItems: 1 })
+    api.addItem({ Name: 'New', deleteAction: { label: 'Delete' } })
+    assert(events.length === 1 && changes() === 0, 'Expected one input and no change')
+    const saved = events[0]
+    assert(saved.target === input && saved.value === '[{"Name":"New"}]', 'Event target or serialized data differed')
+    assert(saved.items === 1 && saved.rows === 1 && saved.renderedRows === 1, 'Event fired before rows and items updated')
+    assert(saved.actionDisplay === 'none', 'Event fired before limit visibility updated')
+    let threw = false
+    try { api.addItem({ Name: 'Blocked' }) } catch (error) { threw = error instanceof RangeError }
+    assert(threw && events.length === 1, 'Rejected addition emitted an event')
+  })
+
+  test('each removal helper emits once after rendering is updated', ({ input, init, events, changes }) => {
+    input.value = '[{"Name":"Existing"}]'
+    const api = init()
+    api.addItem({ Name: 'First' })
+    api.addItem({ Name: 'Second' })
+    events.length = 0
+    api.removeItem(0)
+    api.removeLastNewItem()
+    api.removeLastItem()
+    assert(events.length === 3 && changes() === 0, 'Removal helpers emitted duplicate or missing events')
+    events.forEach((event, index) => {
+      const remaining = 2 - index
+      assert(JSON.parse(event.value).length === remaining, 'Wrong removal value')
+      assert(event.rows === remaining && event.items === remaining && event.renderedRows === remaining, 'Removal event saw stale rows')
+    })
+  })
+
+  test('built-in row delete emits input and reopens add actions before notification', ({ init, events, changes }) => {
+    const api = init({ maxNewItems: 1 })
+    api.addItem({ Name: 'New', deleteAction: {} })
+    events.length = 0
+    api.rows[0].row.querySelector('button').click()
+    assert(events.length === 1 && changes() === 0, 'Delete did not emit one input')
+    assert(events[0].value === '[]' && events[0].rows === 0 && events[0].renderedRows === 0, 'Delete listener saw stale state')
+    assert(events[0].actionDisplay === '', 'Add action was not restored before notification')
+  })
+
+  test('bulk removal emits once with the final state and retains existing items', ({ input, init, events, changes }) => {
+    input.value = '[{"Name":"Existing"}]'
+    const api = init()
+    api.addItem({ Name: 'First' })
+    api.addItem({ Name: 'Second' })
+    events.length = 0
+    api.removeNewItems()
+    assert(events.length === 1 && changes() === 0, 'Bulk removal emitted intermediate events')
+    assert(events[0].value === '[{"Name":"Existing"}]', 'Bulk removal lost existing items')
+    assert(events[0].rows === 1 && events[0].renderedRows === 1 && events[0].items === 1, 'Bulk notification saw intermediate state')
+    api.removeNewItems()
+    assert(events.length === 1, 'No-op bulk removal emitted an event')
+  })
+
+  test('no-op removals, rendering, and visibility changes do not emit events', ({ input, init, events, changes }) => {
+    const api = init()
+    api.removeItem(-1)
+    api.removeItem(0)
+    api.removeItem(0.5)
+    api.removeLastItem()
+    api.removeLastNewItem()
+    api.removeNewItems()
+    api.addRow({ Name: 'Display only' })
+    api.removeRow(0)
+    api.hide('action')
+    api.show('action')
+    assert(input.value === '[]' && events.length === 0 && changes() === 0, 'Non-storage operation emitted an event')
+  })
+
+  test('custom storage notifies only after the serialized input changes', ({ input, init, events }) => {
+    input.value = 'Existing'
+    const api = init({
+      storage: {
+        parse: (value) => value.split('|').map((Name) => ({ Name })),
+        serialize: (items) => items.map(({ Name }) => Name).join('|'),
+      },
+    })
+    api.addItem({ Name: 'New' })
+    api.removeItem(0)
+    assert(events.length === 2 && events[0].value === 'Existing|New' && events[1].value === 'New', 'Custom serialization did not notify correctly')
+  })
+
+  test('unchanged stored values do not emit events', ({ input, init, events, changes }) => {
+    input.value = 'constant'
+    const api = init({ storage: { parse: () => [], serialize: () => 'constant' } })
+    api.addItem({ Name: 'Not stored' })
+    api.removeLastItem()
+    assert(events.length === 0 && changes() === 0, 'Unchanged input emitted an event')
+  })
+
+  test('serialization failures do not emit input or change', ({ input, init, events, changes }) => {
+    let throwError = false
+    const api = init({ storage: {
+      serialize: () => {
+        if (throwError) throw new Error('Cannot save')
+        return null
+      },
+    } })
+    for (const failing of [false, true]) {
+      throwError = failing
+      let threw = false
+      try { api.addItem({ Name: 'Bad' }) } catch { threw = true }
+      assert(threw, 'Expected serialization failure')
+    }
+    assert(input.value === '[]' && events.length === 0 && changes() === 0, 'Failed serialization emitted an event or changed storage')
+  })
+
+  test('repeater changes trigger validation and per-rule clearing without manual dispatch', ({ form, init }) => {
+    let question
+    formControl(form).question('Reasons', (context) => { question = context.question })
+    let validations = 0
+    let clears = 0
+    question.addValidator(({ input }) => {
+      validations++
+      return JSON.parse(input.value).length > 0 ? true : 'Add a reason'
+    }, { validateWhen: [{ targets: [question.input], events: ['input', 'change'] }] })
+    question.addValidator(() => 'Dismiss on edit', {
+      clearErrorsWhen: [{ targets: [question.input], onClear: () => clears++ }],
+    })
+    const api = init()
+    question.validate()
+    api.addItem({ Name: 'New' })
+    assert(validations === 2 && clears === 1, 'Addition triggered duplicate or missing hooks')
+    assert(!question.question.hasAttribute('data-invalid'), 'Addition did not clear errors')
+    api.removeLastItem()
+    assert(validations === 3 && clears === 1, 'Removal triggered duplicate hooks or cleanup')
+    assert(question.question.hasAttribute('data-invalid'), 'Removal did not validate the empty value')
+  })
+
+  results.textContent = `${lines.join('\n')}\n${lines.length - failures}/${lines.length} passed`
+  document.documentElement.dataset.testStatus = failures ? 'failed' : 'passed'
+</script>
